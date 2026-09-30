@@ -1,0 +1,23 @@
+// BoxLoop's subscription tables (clone-owned). Money is Int cents (`...Cents`); never a float.
+
+enum BillingInterval {
+  month
+  year
+}
+
+/// A plan in an org's catalog. Price terms (priceCents, interval, trialDays) are fixed at creation:
+/// changing a price means a new plan and archiving the old one, so existing subscribers keep the
+/// terms they signed up on (grandfathering, P0-1). Only the name is editable. D-001.
+model Plan {
+  id         String          @id @default(uuid()) @db.Uuid
+  orgId      String          @db.Uuid
+  org        Org             @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name       String
+  priceCents Int // CHECK >= 0 in the migration
+  interval   BillingInterval
+  trialDays  Int             @default(0) // CHECK 0..365 in the migration
+  archivedAt DateTime?       @db.Timestamptz(6) // set ⇒ hidden from signup; subscribers unchanged
+  createdAt  DateTime        @default(now()) @db.Timestamptz(6)
+
+  @@index([orgId])
+}
