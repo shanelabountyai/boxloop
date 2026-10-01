@@ -1,4 +1,6 @@
 import { beforeEach, expect, it } from 'vitest';
+import { db } from '@/core/db';
+import { monthlyMetrics, trialConversionBps } from '@/subscriptions/metrics';
 import { passed, simulate } from '@/subscriptions/simulate';
 import { resetAuthTables } from '../helpers/auth';
 
@@ -17,4 +19,12 @@ it('runs 180 days with no duplicate charge, a reconciled ledger and the hand-tal
   // Jan 31: 13 converted trials ($335) + 3 Pro ($180) + 2 annual ($40/month).
   expect(r.mrr[0]).toEqual({ date: '2026-01-31', mrrCents: 55_500, paying: 18 });
   expect(r.mrr.map((m) => m.mrrCents)).toEqual([55_500, 115_000, 108_500, 105_000, 111_500, 111_500]);
+  // P1-1 (D-010): the audit-stream replay agrees with every snapshot. 43 trials (all but Pro and annual): 5 cancelled on day +7, 38 converted.
+  expect(r.eventsMatchState).toBe(true);
+  const total = (k: 'trialsConverted' | 'trialsLost' | 'voluntaryChurn' | 'involuntaryChurn') => r.fromEvents.reduce((n, m) => n + m[k], 0);
+  expect([total('trialsConverted'), total('trialsLost'), trialConversionBps(r.fromEvents)]).toEqual([38, 5, 8837]);
+  expect([total('voluntaryChurn'), total('involuntaryChurn')]).toEqual([3, 5]); // 3 period-end cancels that stood; 5 cards never fixed
+  // The dashboard's month ends, through the sim's last day, are the same rows.
+  const { id } = await db.org.findUniqueOrThrow({ where: { slug: 'sim' } });
+  expect(await monthlyMetrics(id, '2026-06-29')).toEqual(r.fromEvents);
 }, 60_000);

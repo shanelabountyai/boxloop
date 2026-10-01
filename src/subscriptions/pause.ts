@@ -24,6 +24,6 @@ export async function pause(actor: { orgId: string; userId: string | null }, sub
     nextBillingDate: shift(anchor, n, plan.interval),
     pausedUntil: shift(day, periods, plan.interval),
   };
-  await transition(actor, subscriptionId, 'pause', undefined, { expect: { nextBillingDate: sub.nextBillingDate }, set });
+  await transition(actor, subscriptionId, 'pause', day, undefined, { expect: { nextBillingDate: sub.nextBillingDate }, set });
   return set;
 }

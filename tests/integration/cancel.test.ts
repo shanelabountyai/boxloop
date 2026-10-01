@@ -38,7 +38,7 @@ async function daily(from: string, to: string) {
 describe('cancel', () => {
   it('keeps access to the end of the paid period, then the billing run ends it without charging', async () => {
     const { sub, actor } = await subscribed();
-    await transition(actor, sub.id, 'cancel');
+    await transition(actor, sub.id, 'cancel', day('2026-01-20'));
     expect(await daily('2026-01-20', '2026-02-14')).toEqual([]);
     expect((await row(sub.id)).status).toBe('pending_cancellation');
 
@@ -53,14 +53,14 @@ describe('cancel', () => {
 
   it('a trial cancels at once, with nothing charged', async () => {
     const { sub, actor } = await subscribed('2026-01-15', 14);
-    await transition(actor, sub.id, 'cancel');
+    await transition(actor, sub.id, 'cancel', day('2026-01-20'));
     expect((await row(sub.id)).status).toBe('cancelled');
     expect(await daily('2026-01-29', '2026-01-29')).toEqual([]);
   });
 
   it('undone before the paid-through date, it renews on the usual billing date', async () => {
     const { sub, actor } = await subscribed();
-    await transition(actor, sub.id, 'cancel');
+    await transition(actor, sub.id, 'cancel', day('2026-01-20'));
     expect(await undoCancel(actor, sub.id, day('2026-02-14'))).toBe('active');
     expect(await daily('2026-02-14', '2026-02-15')).toEqual(['2026-02-15']);
     expect((await row(sub.id)).status).toBe('active');
@@ -68,18 +68,18 @@ describe('cancel', () => {
 
   it('cannot be undone on or after the paid-through date, even before the run has ended it', async () => {
     const { sub, actor } = await subscribed();
-    await transition(actor, sub.id, 'cancel');
+    await transition(actor, sub.id, 'cancel', day('2026-01-20'));
     await expect(undoCancel(actor, sub.id, day('2026-02-15'))).rejects.toThrow('can no longer be undone');
     expect((await row(sub.id)).status).toBe('pending_cancellation');
     await daily('2026-02-15', '2026-02-15');
     await expect(undoCancel(actor, sub.id, day('2026-02-15'))).rejects.toThrow('can no longer be undone');
-    await expect(transition(actor, sub.id, 'undo_cancel')).rejects.toBeInstanceOf(InvalidTransition);
+    await expect(transition(actor, sub.id, 'undo_cancel', day('2026-02-15'))).rejects.toBeInstanceOf(InvalidTransition);
   });
 
   it('refuses a paused subscription, which can cancel once the pause ends (D-008)', async () => {
     const { sub, actor } = await subscribed();
     await pause(actor, sub.id, 1, day('2026-02-01'));
-    await expect(transition(actor, sub.id, 'cancel')).rejects.toBeInstanceOf(InvalidTransition);
+    await expect(transition(actor, sub.id, 'cancel', day('2026-02-01'))).rejects.toBeInstanceOf(InvalidTransition);
     expect((await row(sub.id)).status).toBe('paused');
   });
 });

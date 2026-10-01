@@ -3,6 +3,7 @@ import type { Subscription } from '@/generated/prisma/client';
 import { type Charger, mockCharger, runBilling } from './billing-run';
 import { undoCancel } from './cancel';
 import { runDunning, updateCard } from './dunning';
+import { type MetricsRow, metricsOn, monthlyCents, MRR_STATUSES, trialConversionBps } from './metrics';
 import { formatCents } from './money';
 import { pause } from './pause';
 import { addDays, calendarDay } from './period';
@@ -49,15 +50,14 @@ const COHORTS: { label: string; plan: (i: number) => PlanKey; act?: (m: Member, 
   {
     label: 'cancels on day +50 (half undo on day +55)',
     plan: () => 'basic',
-    act: (m, c) => (on(m, c, 50) ? transition(m.actor, c.sub.id, 'cancel') : m.i % 20 === 18 && on(m, c, 55) ? undoCancel(m.actor, c.sub.id, c.day) : undefined),
+    act: (m, c) => (on(m, c, 50) ? transition(m.actor, c.sub.id, 'cancel', c.day) : m.i % 20 === 18 && on(m, c, 55) ? undoCancel(m.actor, c.sub.id, c.day) : undefined),
   },
-  { label: 'cancels the trial on day +7', plan: () => 'plus', act: (m, c) => on(m, c, 7) && transition(m.actor, c.sub.id, 'cancel') },
+  { label: 'cancels the trial on day +7', plan: () => 'plus', act: (m, c) => on(m, c, 7) && transition(m.actor, c.sub.id, 'cancel', c.day) },
 ];
 const SOFT_DECLINE_COHORT = 6;
 
 const on = (m: Member, c: Ctx, offset: number) => +c.day === +addDays(m.signupDay, offset);
 const iso = (day: Date) => day.toISOString().slice(0, 10);
-const MRR_STATUSES = new Set(['active', 'past_due', 'pending_cancellation']); // paying or still owed; trials and pauses are not revenue
 
 /** Deletes the previous run's org and members. Audit rows stay (append-only, INV-19). */
 async function reset() {
@@ -119,15 +119,17 @@ export async function simulate({ start = new Date('2026-01-01T00:00:00Z'), days 
 
     if (addDays(day, 1).getUTCDate() === 1 || d === days - 1) mrr.push({ date: iso(day), ...(await mrrOn(org.id)) });
   }
-  return { start: iso(start), end: iso(addDays(start, days - 1)), members: MEMBERS, runs, mrr, ...(await reconcile(org.id, charged)), cohorts: COHORTS.map((c) => c.label) };
+  // P1-1 (D-010): the same month ends replayed from the audit stream must match the snapshots taken from the rows.
+  const fromEvents = await metricsOn(org.id, mrr.map((m) => m.date));
+  const eventsMatchState = fromEvents.every((e, i) => e.mrrCents === mrr[i]!.mrrCents && e.paying === mrr[i]!.paying);
+  return { start: iso(start), end: iso(addDays(start, days - 1)), members: MEMBERS, runs, mrr, fromEvents, eventsMatchState, ...(await reconcile(org.id, charged)), cohorts: COHORTS.map((c) => c.label) };
 }
 
 /** Monthly recurring revenue right now: each paying subscription's price per month (a yearly price / 12). */
 async function mrrOn(orgId: string) {
   const subs = await db.subscription.findMany({ where: { orgId }, include: { plan: true } });
   const paying = subs.filter((s) => MRR_STATUSES.has(s.status));
-  // ponytail: yearly prices divide by 12 exactly in the sim's catalog; a real one needs a rounding rule here.
-  const mrrCents = paying.reduce((sum, s) => sum + (s.plan.interval === 'year' ? s.plan.priceCents / 12 : s.plan.priceCents), 0);
+  const mrrCents = paying.reduce((sum, s) => sum + monthlyCents(s.plan), 0);
   return { mrrCents, paying: paying.length };
 }
 
@@ -177,10 +179,14 @@ export function report(r: Awaited<ReturnType<typeof simulate>>) {
     'MRR by month end:',
     ...r.mrr.map((m) => `  ${m.date}  ${formatCents(m.mrrCents).padStart(9)}  (${m.paying} paying)`),
     '',
+    `From the audit stream: MRR and paying ${r.eventsMatchState ? 'match' : 'DO NOT MATCH'} the snapshots above; trial conversion ${pct(trialConversionBps(r.fromEvents))}`,
+    '              trials won/lost   churn voluntary/involuntary',
+    ...r.fromEvents.map((m: MetricsRow) => `  ${m.date}       ${String(m.trialsConverted).padStart(2)} / ${m.trialsLost}                 ${m.voluntaryChurn} / ${m.involuntaryChurn}`),
+    '',
     `Final statuses: ${Object.entries(r.statuses).map(([s, n]) => `${s} ${n}`).join(', ')}`,
   ].join('\n');
 }
 
 /** False when the run broke a success metric; the command exits non-zero. */
 export const passed = (r: Awaited<ReturnType<typeof simulate>>) =>
-  r.duplicateCharges.ledger === 0 && r.duplicateCharges.provider === 0 && r.runs.rerunChanges === 0 && r.collected.reconciled;
+  r.duplicateCharges.ledger === 0 && r.duplicateCharges.provider === 0 && r.runs.rerunChanges === 0 && r.collected.reconciled && r.eventsMatchState;

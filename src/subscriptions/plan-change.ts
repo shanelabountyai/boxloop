@@ -56,7 +56,7 @@ export async function changePlan(actor: { orgId: string; userId: string | null }
       const change = await t.planChange.create({
         data: { subscriptionId, seq, fromPlanId: sub.planId, toPlanId, effectiveOn: day, providerRef, ...lines },
       });
-      await switchPlan(actor, t, { id: subscriptionId, planId: sub.planId, currentPeriodStart: sub.currentPeriodStart }, toPlanId, Math.max(0, -lines.netCents), change.id);
+      await switchPlan(actor, t, { id: subscriptionId, planId: sub.planId, currentPeriodStart: sub.currentPeriodStart }, toPlanId, Math.max(0, -lines.netCents), change.id, day);
       return change;
     });
   } catch (e) {

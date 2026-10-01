@@ -57,7 +57,7 @@ async function retry(actor: Actor, sub: PastDue, asOf: Date, charge: Charger) {
         return void (await notify(sub, 'Payment failed again', `We could not charge your card. ${next ? `We will try again on ${iso(next)}. ` : ''}Your subscription cancels on ${cancels} unless payment goes through. Updating your payment method retries it now.`, t));
       }
       await advancePeriod(t, sub.id, periodFrom(sub.billingAnchor, sub.plan.interval, key.periodStart), creditAppliedCents);
-      await transition(actor, sub.id, 'payment_recovered', t);
+      await transition(actor, sub.id, 'payment_recovered', asOf, t);
       await notify(sub, 'Payment received', 'Your payment went through. Your subscription is active again.', t);
     });
   } catch (e) {
@@ -82,7 +82,7 @@ export async function runDunning(asOf: Date, charge: Charger = mockCharger) {
     if (day >= addDays(seq.day0, CANCEL_DAY)) {
       try {
         await db.$transaction(async (t) => {
-          await transition(system, sub.id, 'dunning_exhausted', t);
+          await transition(system, sub.id, 'dunning_exhausted', day, t);
           await notify(sub, 'Subscription cancelled', 'We could not collect payment after several tries, so your subscription has been cancelled.', t);
         });
         summary.cancelled++;
@@ -110,7 +110,7 @@ export async function runDunning(asOf: Date, charge: Charger = mockCharger) {
  * is retried at once with the new card. Returns the retry's outcome, or null when there was nothing to retry.
  */
 export async function updateCard(actor: Actor, subscriptionId: string, card: 'approves' | 'declines', asOf: Date, charge: Charger = mockCharger) {
-  await db.$transaction((t) => setCard(actor, subscriptionId, card, t));
+  await db.$transaction((t) => setCard(actor, subscriptionId, card, calendarDay(asOf), t));
   const [sub] = await loadPastDue({ id: subscriptionId, orgId: actor.orgId });
   return sub ? retry(actor, sub, calendarDay(asOf), charge) : null;
 }

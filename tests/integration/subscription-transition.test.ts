@@ -21,23 +21,25 @@ async function subscribed(status: 'trialing' | 'active' = 'trialing', slug = 'ac
   return { org, member, sub, actor: { orgId: org.id, userId: member.id } };
 }
 
+const ON = new Date('2026-02-01T00:00:00Z'); // the business day each event is audited with (D-010)
+
 describe('transition()', () => {
   it('moves the status and audits who/what/when/from/to', async () => {
     const { sub, actor, member } = await subscribed();
-    expect(await transition(actor, sub.id, 'convert')).toBe('active');
-    expect(await transition({ ...actor, userId: null }, sub.id, 'payment_failed')).toBe('past_due'); // a system job
+    expect(await transition(actor, sub.id, 'convert', ON)).toBe('active');
+    expect(await transition({ ...actor, userId: null }, sub.id, 'payment_failed', ON)).toBe('past_due'); // a system job
     expect((await db.subscription.findUniqueOrThrow({ where: { id: sub.id } })).status).toBe('past_due');
     const events = await db.auditEvent.findMany({ where: { targetId: sub.id }, orderBy: { id: 'asc' } });
     expect(events).toMatchObject([
-      { action: 'subscription.convert', actorUserId: member.id, targetType: 'subscription', data: { from: 'trialing', to: 'active' } },
-      { action: 'subscription.payment_failed', actorUserId: null, data: { from: 'active', to: 'past_due' } },
+      { action: 'subscription.convert', actorUserId: member.id, targetType: 'subscription', data: { from: 'trialing', to: 'active', on: '2026-02-01' } },
+      { action: 'subscription.payment_failed', actorUserId: null, data: { from: 'active', to: 'past_due', on: '2026-02-01' } },
     ]);
     expect(events[0]?.at).toBeInstanceOf(Date);
   });
 
   it('refuses an invalid transition without writing', async () => {
     const { sub, actor } = await subscribed();
-    await expect(transition(actor, sub.id, 'pause')).rejects.toThrow(InvalidTransition); // pause in trial (P0-7)
+    await expect(transition(actor, sub.id, 'pause', ON)).rejects.toThrow(InvalidTransition); // pause in trial (P0-7)
     expect((await db.subscription.findUniqueOrThrow({ where: { id: sub.id } })).status).toBe('trialing');
     expect(await db.auditEvent.count()).toBe(0);
   });
@@ -45,7 +47,7 @@ describe('transition()', () => {
   it("treats another org's subscription as missing", async () => {
     const { sub } = await subscribed('trialing', 'acme');
     const other = await makeOrg('other');
-    await expect(transition({ orgId: other.id, userId: null }, sub.id, 'convert')).rejects.toThrow(/not found/);
+    await expect(transition({ orgId: other.id, userId: null }, sub.id, 'convert', ON)).rejects.toThrow(/not found/);
     expect((await db.subscription.findUniqueOrThrow({ where: { id: sub.id } })).status).toBe('trialing');
   });
 
@@ -53,7 +55,7 @@ describe('transition()', () => {
     const { sub, actor } = await subscribed();
     await expect(
       db.$transaction(async (tx) => {
-        await transition(actor, sub.id, 'convert', tx);
+        await transition(actor, sub.id, 'convert', ON, tx);
         throw new Error('charge failed later');
       }),
     ).rejects.toThrow('charge failed later');
@@ -63,7 +65,7 @@ describe('transition()', () => {
 
   it('two racing transitions: exactly one wins, and one audit row', async () => {
     const { sub, actor } = await subscribed('active');
-    const results = await Promise.allSettled([transition(actor, sub.id, 'cancel'), transition(actor, sub.id, 'pause')]);
+    const results = await Promise.allSettled([transition(actor, sub.id, 'cancel', ON), transition(actor, sub.id, 'pause', ON)]);
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
     const loser = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
     expect(loser.reason).toSatisfy((e) => e instanceof StaleTransition || e instanceof InvalidTransition);

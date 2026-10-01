@@ -18,7 +18,7 @@ export class StaleTransition extends Error {}
 /**
  * The only writer of Subscription.status (P0-2). Validates `event` against the state machine,
  * updates the row only if its status is still the one read, and audits who/what/when/from/to in
- * the same transaction. Pass `tx` to commit with the caller's other writes. A subscription outside
+ * the same transaction, with `asOf` as the event's business day `on` (D-010: metrics replay these). Pass `tx` to commit with the caller's other writes. A subscription outside
  * `actor.orgId` reads as missing. `actor.userId` is null for a system job. `also` writes other fields in
  * the same update, only if the row still matches `also.expect`, and its `set` is audited with the move (P0-7).
  */
@@ -26,6 +26,7 @@ export async function transition(
   actor: { orgId: string; userId: string | null },
   subscriptionId: string,
   event: SubscriptionEvent,
+  asOf: Date,
   tx?: Tx,
   also?: { expect: Prisma.SubscriptionWhereInput; set: { currentPeriodStart?: Date; currentPeriodEnd?: Date; nextBillingDate?: Date; pausedUntil?: Date | null } },
 ): Promise<SubscriptionStatus> {
@@ -38,7 +39,7 @@ export async function transition(
       data: { ...also?.set, status: to },
     });
     if (count !== 1) throw new StaleTransition(`subscription ${subscriptionId} changed during ${event}`);
-    await audit(actor, `subscription.${event}`, { targetType: 'subscription', targetId: subscriptionId, data: { from: sub.status, to, ...days(also?.set) } }, t);
+    await audit(actor, `subscription.${event}`, { targetType: 'subscription', targetId: subscriptionId, data: { from: sub.status, to, ...days({ on: asOf, ...also?.set }) } }, t);
     return to;
   };
   return tx ? run(tx) : db.$transaction(run);
@@ -59,10 +60,10 @@ export async function advancePeriod(t: Tx, subscriptionId: string, period: { sta
 }
 
 /** Records the member's new mock payment method (P0-6), audited; the third write to the row, kept here for D-004. */
-export async function setCard(actor: { orgId: string; userId: string | null }, subscriptionId: string, card: 'approves' | 'declines', t: Tx) {
+export async function setCard(actor: { orgId: string; userId: string | null }, subscriptionId: string, card: 'approves' | 'declines', asOf: Date, t: Tx) {
   const { count } = await t.subscription.updateMany({ where: { id: subscriptionId, orgId: actor.orgId }, data: { card } });
   if (count !== 1) throw new Error(`subscription ${subscriptionId} not found`);
-  await audit(actor, 'subscription.card_updated', { targetType: 'subscription', targetId: subscriptionId, data: { card } }, t);
+  await audit(actor, 'subscription.card_updated', { targetType: 'subscription', targetId: subscriptionId, data: { card, ...days({ on: asOf }) } }, t);
 }
 
 /**
@@ -76,11 +77,12 @@ export async function switchPlan(
   toPlanId: string,
   creditCents: number,
   planChangeId: string,
+  asOf: Date,
 ) {
   const { count } = await t.subscription.updateMany({
     where: { ...read, orgId: actor.orgId },
     data: { planId: toPlanId, creditCents: { increment: creditCents } },
   });
   if (count !== 1) throw new StaleTransition(`subscription ${read.id} changed during plan change`);
-  await audit(actor, 'subscription.plan_changed', { targetType: 'subscription', targetId: read.id, data: { from: read.planId, to: toPlanId, planChangeId } }, t);
+  await audit(actor, 'subscription.plan_changed', { targetType: 'subscription', targetId: read.id, data: { from: read.planId, to: toPlanId, planChangeId, ...days({ on: asOf }) } }, t);
 }

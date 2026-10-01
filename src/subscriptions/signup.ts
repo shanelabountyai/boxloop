@@ -1,6 +1,6 @@
 import { audit } from '@/core/audit';
 import { db } from '@/core/db';
-import { signupTerms } from './period';
+import { calendarDay, signupTerms } from './period';
 
 /**
  * Subscribes `actor.userId` to an unarchived plan in `actor.orgId`, as of `asOf` (D-003). Starts `trialing`
@@ -14,7 +14,7 @@ export async function signup(actor: { orgId: string; userId: string }, planId: s
     const sub = await t.subscription.create({
       data: { orgId: actor.orgId, userId: actor.userId, planId, ...signupTerms(plan, asOf) },
     });
-    await audit(actor, 'subscription.created', { targetType: 'subscription', targetId: sub.id, data: { from: null, to: sub.status } }, t);
+    await audit(actor, 'subscription.created', { targetType: 'subscription', targetId: sub.id, data: { from: null, to: sub.status, planId, on: calendarDay(asOf).toISOString().slice(0, 10) } }, t);
     return sub;
   });
 }

@@ -31,7 +31,7 @@ describe('signup', () => {
       '2026-02-14',
     ]);
     const ev = await db.auditEvent.findFirstOrThrow({ where: { action: 'subscription.created', targetId: sub.id } });
-    expect(ev.data).toEqual({ from: null, to: 'trialing' });
+    expect(ev.data).toEqual({ from: null, to: 'trialing', planId: p.id, on: '2026-01-31' });
   });
 
   it('a no-trial plan starts active with the first charge due on signup day', async () => {

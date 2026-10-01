@@ -32,10 +32,10 @@ export const chargeInvoice = (charge: Charger, i: Parameters<Charger>[0]): Promi
   i.amountCents === 0 ? Promise.resolve({ ok: true, ref: 'credit' }) : charge(i);
 
 /** Moves every subscription `where` matches through `event` as the system job, writing `also(row)` with it. A run that loses the race to another skips the row. */
-async function sweep(where: Prisma.SubscriptionWhereInput, event: SubscriptionEvent, also: (s: { pausedUntil: Date | null; currentPeriodEnd: Date }) => Parameters<typeof transition>[4]) {
+async function sweep(day: Date, where: Prisma.SubscriptionWhereInput, event: SubscriptionEvent, also: (s: { pausedUntil: Date | null; currentPeriodEnd: Date }) => Parameters<typeof transition>[5]) {
   const rows = await db.subscription.findMany({ where, select: { id: true, orgId: true, pausedUntil: true, currentPeriodEnd: true } });
   for (const s of rows) {
-    await transition({ orgId: s.orgId, userId: null }, s.id, event, undefined, also(s)).catch((e) => {
+    await transition({ orgId: s.orgId, userId: null }, s.id, event, day, undefined, also(s)).catch((e) => {
       if (!(e instanceof StaleTransition || e instanceof InvalidTransition)) throw e;
     });
   }
@@ -44,8 +44,8 @@ async function sweep(where: Prisma.SubscriptionWhereInput, event: SubscriptionEv
 export async function runBilling(asOf: Date, charge: Charger = mockCharger) {
   const day = calendarDay(asOf);
   // A pause ending on or before `day` resumes (P0-7); a cancellation whose paid period has run out takes effect (P0-8).
-  await sweep({ status: 'paused', pausedUntil: { lte: day } }, 'resume', (s) => ({ expect: { pausedUntil: s.pausedUntil }, set: { pausedUntil: null } }));
-  await sweep({ status: 'pending_cancellation', currentPeriodEnd: { lte: day } }, 'period_ended', (s) => ({ expect: { currentPeriodEnd: s.currentPeriodEnd }, set: {} }));
+  await sweep(day, { status: 'paused', pausedUntil: { lte: day } }, 'resume', (s) => ({ expect: { pausedUntil: s.pausedUntil }, set: { pausedUntil: null } }));
+  await sweep(day, { status: 'pending_cancellation', currentPeriodEnd: { lte: day } }, 'period_ended', (s) => ({ expect: { currentPeriodEnd: s.currentPeriodEnd }, set: {} }));
   const due = await db.subscription.findMany({
     where: { status: { in: ['trialing', 'active'] }, nextBillingDate: { lte: day } },
     include: { plan: { select: { priceCents: true, interval: true } } },
@@ -76,9 +76,9 @@ export async function runBilling(asOf: Date, charge: Charger = mockCharger) {
           },
         });
         const system = { orgId: sub.orgId, userId: null };
-        if (!result.ok) return void (await transition(system, sub.id, 'payment_failed', t)); // opens dunning (P0-6)
+        if (!result.ok) return void (await transition(system, sub.id, 'payment_failed', day, t)); // opens dunning (P0-6)
         await advancePeriod(t, sub.id, periodFrom(sub.billingAnchor, sub.plan.interval, key.periodStart), creditAppliedCents);
-        if (sub.status === 'trialing') await transition(system, sub.id, 'convert', t);
+        if (sub.status === 'trialing') await transition(system, sub.id, 'convert', day, t);
       });
     } catch (e) {
       // Another run recorded this period, or moved the subscription, after our read.
