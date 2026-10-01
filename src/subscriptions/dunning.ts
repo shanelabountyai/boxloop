@@ -43,20 +43,21 @@ async function retry(actor: Actor, sub: PastDue, asOf: Date, charge: Charger) {
   if (!seq) return null;
   const attempt = seq.attempts.at(-1)!.attempt + 1;
   const key = { subscriptionId: sub.id, periodStart: sub.nextBillingDate, attempt };
-  const { amountCents, creditAppliedCents } = invoiceFor(sub);
+  const invoice = invoiceFor(sub);
+  const { amountCents, creditAppliedCents, discountCents } = invoice;
   // Charged before recording, as in the billing run (D-004): a lost write replays at the provider.
   const result = await chargeInvoice(charge, { subscriptionId: sub.id, amountCents, idempotencyKey: `${sub.id}:${iso(key.periodStart)}:${attempt}` });
   const next = RETRY_DAYS.map((d) => addDays(seq.day0, d)).find((d) => d > asOf);
   try {
     await db.$transaction(async (t) => {
       await t.chargeAttempt.create({
-        data: { ...key, amountCents, creditAppliedCents, outcome: result.ok ? 'succeeded' : 'failed', providerRef: result.ok ? result.ref : null, failureReason: result.ok ? null : result.reason, attemptedOn: asOf },
+        data: { ...key, amountCents, creditAppliedCents, discountCents, outcome: result.ok ? 'succeeded' : 'failed', providerRef: result.ok ? result.ref : null, failureReason: result.ok ? null : result.reason, attemptedOn: asOf },
       });
       if (!result.ok) {
         const cancels = iso(addDays(seq.day0, CANCEL_DAY));
         return void (await notify(sub, 'Payment failed again', `We could not charge your card. ${next ? `We will try again on ${iso(next)}. ` : ''}Your subscription cancels on ${cancels} unless payment goes through. Updating your payment method retries it now.`, t));
       }
-      await advancePeriod(t, sub.id, periodFrom(sub.billingAnchor, sub.plan.interval, key.periodStart), creditAppliedCents);
+      await advancePeriod(t, sub.id, periodFrom(sub.billingAnchor, sub.plan.interval, key.periodStart), invoice);
       await transition(actor, sub.id, 'payment_recovered', asOf, t);
       await notify(sub, 'Payment received', 'Your payment went through. Your subscription is active again.', t);
     });

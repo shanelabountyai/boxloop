@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { formatCents, parseCents, prorateCents } from '@/subscriptions/money';
+import { invoiceFor } from '@/subscriptions/billing-run';
+import { formatCents, parseCents, percentOfCents, prorateCents } from '@/subscriptions/money';
 import { prorationLines } from '@/subscriptions/plan-change';
 
 describe('parseCents', () => {
@@ -64,4 +65,25 @@ describe('prorationLines', () => {
   it.each(['2026-08-31', '2026-10-01'])('rejects %s, outside the paid period', (on) =>
     expect(() => prorationLines(3000, 6000, sep, day(on))).toThrow(/outside the paid period/),
   );
+});
+
+describe('coupons (P1-2)', () => {
+  it.each([
+    [2000, 2500, 500],
+    [999, 3333, 333], // 332.97 → 333
+    [1, 5000, 1], // half a cent rounds up
+    [2000, 10_000, 2000],
+  ])('percentOfCents(%i, %i bps) = %i', (cents, bps, out) => expect(percentOfCents(cents, bps)).toBe(out));
+
+  const sub = (creditCents: number, couponOffBps: number, couponPeriodsLeft: number) => ({ creditCents, couponOffBps, couponPeriodsLeft, plan: { priceCents: 2000 } });
+  it('takes the discount first, then the credit', () => {
+    expect(invoiceFor(sub(300, 2500, 1))).toEqual({ amountCents: 1200, discountCents: 500, creditAppliedCents: 300, discountBps: 2500 });
+  });
+  it('uses no more credit than the discounted price, and none for a 100% coupon', () => {
+    expect(invoiceFor(sub(5000, 2500, 1))).toMatchObject({ amountCents: 0, creditAppliedCents: 1500 });
+    expect(invoiceFor(sub(300, 10_000, 1))).toMatchObject({ amountCents: 0, creditAppliedCents: 0, discountCents: 2000 });
+  });
+  it('ignores a used-up coupon', () => {
+    expect(invoiceFor(sub(0, 2500, 0))).toEqual({ amountCents: 2000, discountCents: 0, creditAppliedCents: 0, discountBps: 0 });
+  });
 });

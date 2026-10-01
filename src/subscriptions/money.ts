@@ -15,6 +15,9 @@ export function formatCents(cents: number): string {
   return `${cents < 0 ? '-' : ''}$${dollars}.${String(abs % 100).padStart(2, '0')}`;
 }
 
+/** `bps` basis points of `amountCents`, rounded half-up: a coupon's discount (P1-2). */
+export const percentOfCents = (amountCents: number, bps: number) => prorateCents(amountCents, bps, 10_000);
+
 /**
  * `amountCents × remainingDays / periodDays`, rounded half-up, in integers only (P0-5). Callers negate it for a
  * credit, so a credit and a charge of the same size round to the same magnitude.

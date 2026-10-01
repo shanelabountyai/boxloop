@@ -1,6 +1,6 @@
 import { db } from '@/core/db';
 import { type Charger, mockCharger } from './billing-run';
-import { prorateCents } from './money';
+import { percentOfCents, prorateCents } from './money';
 import { calendarDay } from './period';
 import { StaleTransition, switchPlan } from './transition';
 
@@ -41,8 +41,10 @@ export async function changePlan(actor: { orgId: string; userId: string | null }
   if (sub.status !== 'trialing' && sub.status !== 'active') throw new Error(`a ${sub.status} subscription cannot change plan`);
 
   const period = { start: sub.currentPeriodStart, end: sub.currentPeriodEnd };
-  const paid = sub.status === 'active';
-  const lines = prorationLines(paid ? sub.plan.priceCents : 0, paid ? to.priceCents : 0, period, day);
+  // Both sides at the discount the period was paid at (P1-2), so a downgrade never credits more than was paid.
+  const discountBps = sub.status === 'active' ? sub.paidOffBps : 0;
+  const paidPrice = (cents: number) => (sub.status === 'active' ? cents - percentOfCents(cents, discountBps) : 0);
+  const lines = prorationLines(paidPrice(sub.plan.priceCents), paidPrice(to.priceCents), period, day);
   const seq = sub._count.planChanges + 1;
   let providerRef: string | null = null;
   if (lines.netCents > 0) {
@@ -54,7 +56,7 @@ export async function changePlan(actor: { orgId: string; userId: string | null }
   try {
     return await db.$transaction(async (t) => {
       const change = await t.planChange.create({
-        data: { subscriptionId, seq, fromPlanId: sub.planId, toPlanId, effectiveOn: day, providerRef, ...lines },
+        data: { subscriptionId, seq, fromPlanId: sub.planId, toPlanId, effectiveOn: day, providerRef, discountBps, ...lines },
       });
       await switchPlan(actor, t, { id: subscriptionId, planId: sub.planId, currentPeriodStart: sub.currentPeriodStart }, toPlanId, Math.max(0, -lines.netCents), change.id, day);
       return change;

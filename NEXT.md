@@ -1,10 +1,12 @@
 # NEXT
 
-## ▶ Next session here: P1-2 coupons (PRD): percent-off for N periods, and how it interacts with proration (D-006) and the downgrade credit. Decide first whether the discount applies before or after credit, and whether a coupon survives a plan change.
+## ▶ Next session here: P1-3 trial-ending reminder (PRD): an outbox notification 3 days before conversion. It must be idempotent across repeated billing runs, as charges are. Decide whether it is sent from the billing run or from its own sweep.
 
-Done 2026-10-01: **P1-1 metrics** (D-010). Metrics are replayed from the `subscription.*` audit stream by business day (`on`). The page is `/o/[org]/metrics`. `npm run simulate` now cross-checks the replayed MRR against the row snapshots and prints trial conversion of 88.37% (38 won, 5 lost) and churn of 3 voluntary and 5 involuntary.
+Done 2026-10-01: **P1-2 coupons** (D-011). A coupon is a percent off the next N paid invoices and comes off before credit. It survives a plan change, and proration prices both plans at the paid period's discount (`paidOffBps`). Tests: `tests/integration/coupon.test.ts` and the `coupons` block in `tests/unit/money.test.ts`.
 
 Carry forward:
-- The PRD's "MRR matches an independent spreadsheet" check is still open. The Jan 31 figure is hand-checked in the test; every month end is now checked rows against events, but both are this codebase's own derivations. A CSV export from the sim would feed the spreadsheet if it is wanted.
+- Coupons have no UI and no code catalog; `applyCoupon()` is domain-only, like `changePlan()`. MRR is still at list price (D-011 says how to make it net).
+- The full vitest sweep timed out once in `tests/invariants/inv-01-04-22-actions.test.ts` (180s), and its controls then failed with an org-create conflict. The file passes alone in 3.5s, and another project's test DB was active at the time. Watch for it in the next sweep.
+- The PRD's "MRR matches an independent spreadsheet" check is still open (see D-010).
 - The sim needs no subscriptions outside org `sim` in the database it runs on, because the billing run is global.
 - Still true: hand-write migrations, then `npx prisma migrate deploy` + `npm run db:migrate:test` + `npm run db:generate`, check `npx prisma migrate diff --from-config-datasource --to-schema prisma/schema --script` is empty, and `git checkout prisma/migrations/migration_lock.toml` before committing.

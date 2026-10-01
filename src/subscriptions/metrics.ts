@@ -42,7 +42,7 @@ export function replay(events: SubEvent[], plans: Map<string, Plan>, dates: stri
       const s = subs.get(targetId);
       if (!s) throw new Error(`subscription ${targetId}: ${action} before its created event`);
       if (action === 'subscription.plan_changed') s.planId = data.to;
-      if (action === 'subscription.plan_changed' || action === 'subscription.card_updated') continue;
+      if (action === 'subscription.plan_changed' || action === 'subscription.card_updated' || action === 'subscription.coupon_applied') continue;
       s.status = data.to;
       if (s.status === 'active' && !s.everPaid) {
         s.everPaid = true;

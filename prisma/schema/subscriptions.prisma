@@ -57,6 +57,9 @@ model Subscription {
   card               MockCard           @default(approves) // written only by setCard() in transition.ts
   creditCents        Int                @default(0) // downgrade credit owed to the next invoice (P0-5); CHECK >= 0 in the migration
   pausedUntil        DateTime?          @db.Date // the day a pause ends (P0-7); CHECK set exactly when paused, in the migration
+  couponOffBps       Int                @default(0) // coupon percent off (P1-2), for the next couponPeriodsLeft invoices; CHECK 0..10000
+  couponPeriodsLeft  Int                @default(0) // paid periods the coupon still discounts; CHECK >= 0
+  paidOffBps         Int                @default(0) // the discount the current paid period was charged at, for proration; CHECK 0..10000
   chargeAttempts     ChargeAttempt[]
   planChanges        PlanChange[]
   createdAt          DateTime           @default(now()) @db.Timestamptz(6)
@@ -80,8 +83,9 @@ model ChargeAttempt {
   subscription       Subscription  @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
   periodStart        DateTime      @db.Date // the period being paid for: the subscription's nextBillingDate when charged
   attempt            Int
-  amountCents        Int // CHECK >= 0 in the migration; the plan price less creditAppliedCents
+  amountCents        Int // CHECK >= 0 in the migration; the plan price less discountCents, then creditAppliedCents
   creditAppliedCents Int           @default(0) // credit this invoice used up (P0-5); CHECK >= 0 in the migration
+  discountCents      Int           @default(0) // coupon discount, taken before credit (P1-2); CHECK >= 0 in the migration
   outcome            ChargeOutcome
   providerRef        String? // set on success; "credit" when credit covered the whole amount and nothing was charged
   failureReason      String? // set on failure
@@ -108,6 +112,7 @@ model PlanChange {
   creditCents    Int // CHECK <= 0 in the migration
   chargeCents    Int // CHECK >= 0 in the migration
   netCents       Int // creditCents + chargeCents, CHECKed in the migration
+  discountBps    Int          @default(0) // the paid period's coupon discount, applied to both prices before prorating (P1-2)
   providerRef    String? // set when a positive net was charged
   createdAt      DateTime     @default(now()) @db.Timestamptz(6)
 

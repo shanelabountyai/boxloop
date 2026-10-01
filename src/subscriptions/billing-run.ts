@@ -1,5 +1,6 @@
 import { db } from '@/core/db';
 import type { Prisma } from '@/generated/prisma/client';
+import { percentOfCents } from './money';
 import { calendarDay, periodFrom } from './period';
 import { InvalidTransition, type SubscriptionEvent } from './state';
 import { advancePeriod, StaleTransition, transition } from './transition';
@@ -21,10 +22,12 @@ export const mockCharger: Charger = async (i) => {
 
 const iso = (day: Date) => day.toISOString().slice(0, 10);
 
-/** What a period's invoice charges: the plan price less any downgrade credit (P0-5). */
-export function invoiceFor(sub: { creditCents: number; plan: { priceCents: number } }) {
-  const creditAppliedCents = Math.min(sub.creditCents, sub.plan.priceCents);
-  return { amountCents: sub.plan.priceCents - creditAppliedCents, creditAppliedCents };
+/** What a period's invoice charges: the plan price less a live coupon (P1-2), then less any downgrade credit (P0-5). */
+export function invoiceFor(sub: { creditCents: number; couponOffBps: number; couponPeriodsLeft: number; plan: { priceCents: number } }) {
+  const discountBps = sub.couponPeriodsLeft > 0 ? sub.couponOffBps : 0;
+  const discountCents = percentOfCents(sub.plan.priceCents, discountBps);
+  const creditAppliedCents = Math.min(sub.creditCents, sub.plan.priceCents - discountCents);
+  return { amountCents: sub.plan.priceCents - discountCents - creditAppliedCents, creditAppliedCents, discountCents, discountBps };
 }
 
 /** Charges an invoice, or records it as paid by credit without calling the provider when nothing is owed. */
@@ -59,7 +62,8 @@ export async function runBilling(asOf: Date, charge: Charger = mockCharger) {
       summary.skipped++;
       continue;
     }
-    const { amountCents, creditAppliedCents } = invoiceFor(sub);
+    const invoice = invoiceFor(sub);
+    const { amountCents, creditAppliedCents, discountCents } = invoice;
     // Charged before recording: if the write below never lands, a rerun sends the same key and the provider replays.
     const result = await chargeInvoice(charge, { subscriptionId: sub.id, amountCents, idempotencyKey: `${sub.id}:${iso(key.periodStart)}:1` });
     try {
@@ -69,6 +73,7 @@ export async function runBilling(asOf: Date, charge: Charger = mockCharger) {
             ...key,
             amountCents,
             creditAppliedCents,
+            discountCents,
             outcome: result.ok ? 'succeeded' : 'failed',
             providerRef: result.ok ? result.ref : null,
             failureReason: result.ok ? null : result.reason,
@@ -77,7 +82,7 @@ export async function runBilling(asOf: Date, charge: Charger = mockCharger) {
         });
         const system = { orgId: sub.orgId, userId: null };
         if (!result.ok) return void (await transition(system, sub.id, 'payment_failed', day, t)); // opens dunning (P0-6)
-        await advancePeriod(t, sub.id, periodFrom(sub.billingAnchor, sub.plan.interval, key.periodStart), creditAppliedCents);
+        await advancePeriod(t, sub.id, periodFrom(sub.billingAnchor, sub.plan.interval, key.periodStart), invoice);
         if (sub.status === 'trialing') await transition(system, sub.id, 'convert', day, t);
       });
     } catch (e) {

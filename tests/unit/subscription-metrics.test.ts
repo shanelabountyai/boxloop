@@ -32,6 +32,7 @@ it('prices each day by the plan in force, leaves pauses out of MRR, and counts c
       created('p', '2026-01-01', 'active'), ev('p', 'pause', '2026-01-05', 'paused'),
       created('y', '2026-01-02', 'active', 'year'),
       { targetId: 'y', action: 'subscription.card_updated', data: { on: '2026-01-03', to: '' } },
+      { targetId: 'y', action: 'subscription.coupon_applied', data: { on: '2026-01-03', to: '' } },
     ],
     plans,
     ['2026-01-04', '2026-01-31', '2026-02-28'],

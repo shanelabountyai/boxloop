@@ -49,12 +49,21 @@ export async function transition(
  * Moves a paid subscription into `period`, the one it was just charged for (P0-4): the only other write to
  * the row, kept in this file so every Subscription write stays here (D-004). Writes only if
  * `nextBillingDate` is still `period.start`, so a racing run cannot advance the same period twice.
- * `creditUsedCents` is the credit that invoice used up (P0-5), taken off the balance in the same write.
+ * The invoice's credit (P0-5) comes off the balance and its coupon (P1-2) loses a period in the same write, which
+ * also records the discount the new period was paid at; a coupon changed since the invoice was priced stops it.
  */
-export async function advancePeriod(t: Tx, subscriptionId: string, period: { start: Date; end: Date }, creditUsedCents = 0) {
+export async function advancePeriod(t: Tx, subscriptionId: string, period: { start: Date; end: Date }, invoice = { creditAppliedCents: 0, discountBps: 0 }) {
+  const coupon = invoice.discountBps > 0;
   const { count } = await t.subscription.updateMany({
-    where: { id: subscriptionId, nextBillingDate: period.start, creditCents: { gte: creditUsedCents } },
-    data: { currentPeriodStart: period.start, currentPeriodEnd: period.end, nextBillingDate: period.end, creditCents: { decrement: creditUsedCents } },
+    where: { id: subscriptionId, nextBillingDate: period.start, creditCents: { gte: invoice.creditAppliedCents }, ...(coupon && { couponOffBps: invoice.discountBps, couponPeriodsLeft: { gte: 1 } }) },
+    data: {
+      currentPeriodStart: period.start,
+      currentPeriodEnd: period.end,
+      nextBillingDate: period.end,
+      creditCents: { decrement: invoice.creditAppliedCents },
+      paidOffBps: invoice.discountBps,
+      ...(coupon && { couponPeriodsLeft: { decrement: 1 } }),
+    },
   });
   if (count !== 1) throw new StaleTransition(`subscription ${subscriptionId} already moved past ${period.start.toISOString().slice(0, 10)}`);
 }
@@ -64,6 +73,23 @@ export async function setCard(actor: { orgId: string; userId: string | null }, s
   const { count } = await t.subscription.updateMany({ where: { id: subscriptionId, orgId: actor.orgId }, data: { card } });
   if (count !== 1) throw new Error(`subscription ${subscriptionId} not found`);
   await audit(actor, 'subscription.card_updated', { targetType: 'subscription', targetId: subscriptionId, data: { card, ...days({ on: asOf }) } }, t);
+}
+
+/**
+ * Puts a coupon on the subscription (P1-2): `offBps` off each of the next `periods` paid invoices, after any
+ * trial, surviving plan changes. Audited; one coupon at a time, so a new one waits until the last is used up.
+ */
+export async function applyCoupon(actor: { orgId: string; userId: string | null }, subscriptionId: string, offBps: number, periods: number, asOf: Date) {
+  if (!Number.isSafeInteger(offBps) || offBps < 1 || offBps > 10_000) throw new Error(`a coupon is 1–10000 bps off, not ${offBps}`);
+  if (!Number.isSafeInteger(periods) || periods < 1) throw new Error(`a coupon lasts at least one period, not ${periods}`);
+  return db.$transaction(async (t) => {
+    const { count } = await t.subscription.updateMany({
+      where: { id: subscriptionId, orgId: actor.orgId, couponPeriodsLeft: 0, status: { not: 'cancelled' } },
+      data: { couponOffBps: offBps, couponPeriodsLeft: periods },
+    });
+    if (count !== 1) throw new Error(`subscription ${subscriptionId} not found, cancelled, or already has a coupon`);
+    await audit(actor, 'subscription.coupon_applied', { targetType: 'subscription', targetId: subscriptionId, data: { offBps, periods, ...days({ on: asOf }) } }, t);
+  });
 }
 
 /**
