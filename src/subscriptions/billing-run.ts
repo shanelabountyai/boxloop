@@ -1,7 +1,8 @@
 import { db } from '@/core/db';
+import { enqueue } from '@/modules/notifications/outbox';
 import type { Prisma } from '@/generated/prisma/client';
-import { percentOfCents } from './money';
-import { calendarDay, periodFrom } from './period';
+import { formatCents, percentOfCents } from './money';
+import { addDays, calendarDay, periodFrom } from './period';
 import { InvalidTransition, type SubscriptionEvent } from './state';
 import { advancePeriod, StaleTransition, transition } from './transition';
 
@@ -9,6 +10,7 @@ import { advancePeriod, StaleTransition, transition } from './transition';
 // or before `asOf` (D-003), once per period. past_due belongs to dunning (P0-6); paused and
 // pending_cancellation never renew (P0-7, P0-8). Pauses resume and cancellations end first, so a resumed
 // subscription whose next billing date has come is charged in the same run, and a cancelled one is not.
+// Trial-ending reminders (P1-3) are queued after those sweeps and before charging.
 
 export type ChargeResult = { ok: true; ref: string } | { ok: false; reason: string };
 /** Charges a member. Must replay its first result for a repeated `idempotencyKey`, as Stripe does. */
@@ -44,11 +46,34 @@ async function sweep(day: Date, where: Prisma.SubscriptionWhereInput, event: Sub
   }
 }
 
+export const TRIAL_REMINDER_DAYS = 3;
+
+/**
+ * P1-3: queues one email, quoting the conversion invoice, to each trialing member whose conversion is 1–3 days after `day`. A window, not an exact
+ * day, so a run skipped on day -3 still reminds on -2. The TrialReminder row and the outbox row commit together,
+ * and the row's key is the subscription, so a rerun, or a run racing this one, queues nothing more.
+ */
+async function remindTrialsEnding(day: Date) {
+  const subs = await db.subscription.findMany({
+    where: { status: 'trialing', nextBillingDate: { gt: day, lte: addDays(day, TRIAL_REMINDER_DAYS) }, trialReminder: null },
+    select: { id: true, orgId: true, nextBillingDate: true, creditCents: true, couponOffBps: true, couponPeriodsLeft: true, user: { select: { email: true } }, plan: { select: { name: true, priceCents: true } } },
+  });
+  for (const s of subs) {
+    await db.$transaction(async (t) => {
+      const { count } = await t.trialReminder.createMany({ data: [{ subscriptionId: s.id, trialEndsOn: s.nextBillingDate, queuedOn: day }], skipDuplicates: true });
+      if (!count) return;
+      const body = `Your free trial of ${s.plan.name} ends on ${iso(s.nextBillingDate)}. Your card will be charged ${formatCents(invoiceFor(s).amountCents)} that day unless you cancel before then.`;
+      await enqueue({ channel: 'email', to: s.user.email, template: 'notice', orgId: s.orgId, data: { subject: 'Your trial ends soon', body } }, t);
+    });
+  }
+}
+
 export async function runBilling(asOf: Date, charge: Charger = mockCharger) {
   const day = calendarDay(asOf);
   // A pause ending on or before `day` resumes (P0-7); a cancellation whose paid period has run out takes effect (P0-8).
   await sweep(day, { status: 'paused', pausedUntil: { lte: day } }, 'resume', (s) => ({ expect: { pausedUntil: s.pausedUntil }, set: { pausedUntil: null } }));
   await sweep(day, { status: 'pending_cancellation', currentPeriodEnd: { lte: day } }, 'period_ended', (s) => ({ expect: { currentPeriodEnd: s.currentPeriodEnd }, set: {} }));
+  await remindTrialsEnding(day);
   const due = await db.subscription.findMany({
     where: { status: { in: ['trialing', 'active'] }, nextBillingDate: { lte: day } },
     include: { plan: { select: { priceCents: true, interval: true } } },

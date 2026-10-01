@@ -62,6 +62,7 @@ model Subscription {
   paidOffBps         Int                @default(0) // the discount the current paid period was charged at, for proration; CHECK 0..10000
   chargeAttempts     ChargeAttempt[]
   planChanges        PlanChange[]
+  trialReminder      TrialReminder?
   createdAt          DateTime           @default(now()) @db.Timestamptz(6)
 
   @@index([orgId, status])
@@ -117,4 +118,13 @@ model PlanChange {
   createdAt      DateTime     @default(now()) @db.Timestamptz(6)
 
   @@unique([subscriptionId, seq])
+}
+
+/// The trial-ending reminder (P1-3), at most one per subscription: a subscription has one trial. The billing
+/// run inserts it with the outbox row in one transaction, so a rerun, or a racing run, cannot queue a second.
+model TrialReminder {
+  subscriptionId String       @id @db.Uuid
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  trialEndsOn    DateTime     @db.Date // the conversion date the reminder named
+  queuedOn       DateTime     @db.Date // the billing run's day
 }
