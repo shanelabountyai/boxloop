@@ -9,15 +9,43 @@ enum BillingInterval {
 /// changing a price means a new plan and archiving the old one, so existing subscribers keep the
 /// terms they signed up on (grandfathering, P0-1). Only the name is editable. D-001.
 model Plan {
-  id         String          @id @default(uuid()) @db.Uuid
-  orgId      String          @db.Uuid
-  org        Org             @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  name       String
-  priceCents Int // CHECK >= 0 in the migration
-  interval   BillingInterval
-  trialDays  Int             @default(0) // CHECK 0..365 in the migration
-  archivedAt DateTime?       @db.Timestamptz(6) // set ⇒ hidden from signup; subscribers unchanged
-  createdAt  DateTime        @default(now()) @db.Timestamptz(6)
+  id            String          @id @default(uuid()) @db.Uuid
+  orgId         String          @db.Uuid
+  org           Org             @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name          String
+  priceCents    Int // CHECK >= 0 in the migration
+  interval      BillingInterval
+  trialDays     Int             @default(0) // CHECK 0..365 in the migration
+  archivedAt    DateTime?       @db.Timestamptz(6) // set ⇒ hidden from signup; subscribers unchanged
+  subscriptions Subscription[]
+  createdAt     DateTime        @default(now()) @db.Timestamptz(6)
 
   @@index([orgId])
+}
+
+/// Mirrors STATUSES in src/subscriptions/state.ts (a type check in transition.ts fails if they drift).
+enum SubscriptionStatus {
+  trialing
+  active
+  past_due
+  paused
+  pending_cancellation
+  cancelled
+}
+
+/// A member's subscription to a plan. `status` changes only through transition() (P0-2), which
+/// audits every move. Period dates arrive with the billing cycle engine (P0-3).
+model Subscription {
+  id        String             @id @default(uuid()) @db.Uuid
+  orgId     String             @db.Uuid
+  org       Org                @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  userId    String             @db.Uuid
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId    String             @db.Uuid
+  plan      Plan               @relation(fields: [planId], references: [id], onDelete: NoAction) // plans archive, never delete; NoAction (end-of-statement) lets an org delete cascade both
+  status    SubscriptionStatus
+  createdAt DateTime           @default(now()) @db.Timestamptz(6)
+
+  @@index([orgId, status])
+  @@index([userId])
 }
