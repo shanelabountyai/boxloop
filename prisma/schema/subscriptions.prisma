@@ -34,18 +34,23 @@ enum SubscriptionStatus {
 }
 
 /// A member's subscription to a plan. `status` changes only through transition() (P0-2), which
-/// audits every move. Period dates arrive with the billing cycle engine (P0-3).
+/// audits every move. Period dates are calendar days (P0-3, src/subscriptions/period.ts).
 model Subscription {
-  id        String             @id @default(uuid()) @db.Uuid
-  orgId     String             @db.Uuid
-  org       Org                @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  userId    String             @db.Uuid
-  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  planId    String             @db.Uuid
-  plan      Plan               @relation(fields: [planId], references: [id], onDelete: NoAction) // plans archive, never delete; NoAction (end-of-statement) lets an org delete cascade both
-  status    SubscriptionStatus
-  createdAt DateTime           @default(now()) @db.Timestamptz(6)
+  id                 String             @id @default(uuid()) @db.Uuid
+  orgId              String             @db.Uuid
+  org                Org                @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  userId             String             @db.Uuid
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId             String             @db.Uuid
+  plan               Plan               @relation(fields: [planId], references: [id], onDelete: NoAction) // plans archive, never delete; NoAction (end-of-statement) lets an org delete cascade both
+  status             SubscriptionStatus
+  billingAnchor      DateTime           @db.Date // trial end, or signup day without a trial; billing dates are counted from it
+  currentPeriodStart DateTime           @db.Date
+  currentPeriodEnd   DateTime           @db.Date // exclusive; CHECK > start in the migration
+  nextBillingDate    DateTime           @db.Date // start of the first unpaid period
+  createdAt          DateTime           @default(now()) @db.Timestamptz(6)
 
   @@index([orgId, status])
   @@index([userId])
+  @@index([nextBillingDate])
 }

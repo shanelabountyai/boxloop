@@ -118,7 +118,7 @@ Measurement method: a `simulate` command that advances a virtual clock day-by-da
 
 ## Open Questions
 
-- **(Builder)** Virtual clock design — inject a clock/time provider everywhere vs. pass `--date` into jobs? Injectable clock is more testable. *(blocking — decide before P0-3)*
+- **(Builder)** Virtual clock design — inject a clock/time provider everywhere vs. pass `--date` into jobs? Injectable clock is more testable. *(resolved: pass the date in, D-003)*
 - **(Builder)** Store money as integer cents confirmed? Yes — treat any float in money code as a bug. *(resolved)*
 - **(Product)** Should pause be self-serve limited to 1×/year? V1: unlimited, log it, revisit with data. *(non-blocking)*
 
@@ -133,4 +133,4 @@ Measurement method: a `simulate` command that advances a virtual clock day-by-da
 
 - TDD the state machine and proration modules — they're pure logic and the most defect-prone
 - The 180-day simulation doubles as your portfolio demo: one command, visible output, provable correctness
-- CLAUDE.md must state: money = integer cents, time = injected clock, state changes = only through the state-machine module. These are the three conventions Claude will otherwise drift on across sessions
+- CLAUDE.md must state: money = integer cents, time = passed in as a date (D-003), state changes = only through the state-machine module. These are the three conventions Claude will otherwise drift on across sessions

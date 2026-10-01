@@ -14,7 +14,10 @@ async function subscribed(status: 'trialing' | 'active' = 'trialing', slug = 'ac
   const org = await makeOrg(slug);
   const member = await addMember(org.id, 'member', `m@${slug}.test`);
   const plan = await db.plan.create({ data: { orgId: org.id, name: 'Hobby Box', priceCents: 3000, interval: 'month', trialDays: 14 } });
-  const sub = await db.subscription.create({ data: { orgId: org.id, userId: member.id, planId: plan.id, status } });
+  const day = new Date('2026-01-01T00:00:00Z');
+  const sub = await db.subscription.create({
+    data: { orgId: org.id, userId: member.id, planId: plan.id, status, billingAnchor: day, currentPeriodStart: day, currentPeriodEnd: new Date('2026-01-15T00:00:00Z'), nextBillingDate: day },
+  });
   return { org, member, sub, actor: { orgId: org.id, userId: member.id } };
 }
 
