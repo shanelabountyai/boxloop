@@ -1,10 +1,12 @@
 import { db } from '@/core/db';
 import { calendarDay, periodFrom } from './period';
+import { InvalidTransition } from './state';
 import { advancePeriod, StaleTransition, transition } from './transition';
 
 // P0-4: the daily billing run. Charges every trialing or active subscription whose nextBillingDate is on
 // or before `asOf` (D-003), once per period. past_due belongs to dunning (P0-6); paused and
-// pending_cancellation never renew (P0-7, P0-8).
+// pending_cancellation never renew (P0-7, P0-8). A pause ending on or before `asOf` resumes first, so a
+// resumed subscription whose next billing date has come is charged in the same run.
 
 export type ChargeResult = { ok: true; ref: string } | { ok: false; reason: string };
 /** Charges a member. Must replay its first result for a repeated `idempotencyKey`, as Stripe does. */
@@ -28,8 +30,20 @@ export function invoiceFor(sub: { creditCents: number; plan: { priceCents: numbe
 export const chargeInvoice = (charge: Charger, i: Parameters<Charger>[0]): Promise<ChargeResult> =>
   i.amountCents === 0 ? Promise.resolve({ ok: true, ref: 'credit' }) : charge(i);
 
+/** Resumes every pause that ends on or before `day` (P0-7). A run that loses the race to another skips it. */
+async function resumePauses(day: Date) {
+  const ending = await db.subscription.findMany({ where: { status: 'paused', pausedUntil: { lte: day } }, select: { id: true, orgId: true, pausedUntil: true } });
+  for (const s of ending) {
+    await transition({ orgId: s.orgId, userId: null }, s.id, 'resume', undefined, { expect: { pausedUntil: s.pausedUntil }, set: { pausedUntil: null } }).catch((e) => {
+      if (!(e instanceof StaleTransition || e instanceof InvalidTransition)) throw e;
+    });
+  }
+  return ending.length;
+}
+
 export async function runBilling(asOf: Date, charge: Charger = mockCharger) {
   const day = calendarDay(asOf);
+  await resumePauses(day);
   const due = await db.subscription.findMany({
     where: { status: { in: ['trialing', 'active'] }, nextBillingDate: { lte: day } },
     include: { plan: { select: { priceCents: true, interval: true } } },

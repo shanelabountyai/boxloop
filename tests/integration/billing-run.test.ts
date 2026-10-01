@@ -70,7 +70,8 @@ describe('runBilling', () => {
   it('never charges paused, past_due or pending_cancellation subscriptions', async () => {
     const sub = await subscribed(0);
     for (const status of ['paused', 'past_due', 'pending_cancellation'] as const) {
-      await db.$executeRaw`UPDATE "Subscription" SET status = ${status}::"SubscriptionStatus" WHERE id = ${sub.id}::uuid`;
+      const pausedUntil = status === 'paused' ? day('2026-12-31') : null; // the CHECK requires it exactly while paused
+      await db.$executeRaw`UPDATE "Subscription" SET status = ${status}::"SubscriptionStatus", "pausedUntil" = ${pausedUntil}::date WHERE id = ${sub.id}::uuid`;
       expect((await runBilling(day('2026-01-31'))).attempted).toBe(0);
     }
   });

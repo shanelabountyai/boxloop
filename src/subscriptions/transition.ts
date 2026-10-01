@@ -9,6 +9,9 @@ type Tx = Prisma.TransactionClient;
 const sameSet: [DbStatus, SubscriptionStatus] extends [SubscriptionStatus, DbStatus] ? true : never = true;
 void sameSet;
 
+/** Date fields as calendar-day strings, for an audit payload. */
+const days = (set: Record<string, Date | null> = {}) => Object.fromEntries(Object.entries(set).map(([k, v]) => [k, v && v.toISOString().slice(0, 10)]));
+
 /** Another writer moved the subscription between our read and our write. Safe to retry. */
 export class StaleTransition extends Error {}
 
@@ -16,21 +19,26 @@ export class StaleTransition extends Error {}
  * The only writer of Subscription.status (P0-2). Validates `event` against the state machine,
  * updates the row only if its status is still the one read, and audits who/what/when/from/to in
  * the same transaction. Pass `tx` to commit with the caller's other writes. A subscription outside
- * `actor.orgId` reads as missing. `actor.userId` is null for a system job.
+ * `actor.orgId` reads as missing. `actor.userId` is null for a system job. `also` writes other fields in
+ * the same update, only if the row still matches `also.expect`, and its `set` is audited with the move (P0-7).
  */
 export async function transition(
   actor: { orgId: string; userId: string | null },
   subscriptionId: string,
   event: SubscriptionEvent,
   tx?: Tx,
+  also?: { expect: Prisma.SubscriptionWhereInput; set: { currentPeriodStart?: Date; currentPeriodEnd?: Date; nextBillingDate?: Date; pausedUntil?: Date | null } },
 ): Promise<SubscriptionStatus> {
   const run = async (t: Tx) => {
     const sub = await t.subscription.findFirst({ where: { id: subscriptionId, orgId: actor.orgId }, select: { status: true } });
     if (!sub) throw new Error(`subscription ${subscriptionId} not found`);
     const to = next(sub.status, event); // throws InvalidTransition before any write
-    const { count } = await t.subscription.updateMany({ where: { id: subscriptionId, status: sub.status }, data: { status: to } });
+    const { count } = await t.subscription.updateMany({
+      where: { ...also?.expect, id: subscriptionId, status: sub.status },
+      data: { ...also?.set, status: to },
+    });
     if (count !== 1) throw new StaleTransition(`subscription ${subscriptionId} changed during ${event}`);
-    await audit(actor, `subscription.${event}`, { targetType: 'subscription', targetId: subscriptionId, data: { from: sub.status, to } }, t);
+    await audit(actor, `subscription.${event}`, { targetType: 'subscription', targetId: subscriptionId, data: { from: sub.status, to, ...days(also?.set) } }, t);
     return to;
   };
   return tx ? run(tx) : db.$transaction(run);

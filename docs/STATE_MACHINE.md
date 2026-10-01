@@ -31,6 +31,8 @@ stateDiagram-v2
 - Any (status, event) pair not drawn above is refused with `InvalidTransition`, before any write.
 - `cancelled` is terminal.
 - Pausing a trial is refused (P0-7): `pause` exists only from `active`.
+  A paused row always has `pausedUntil`, and only a paused row has it (CHECK `Subscription_paused_until`);
+  the billing run moves it `resume` on that day (D-007).
 - Involuntary churn is `dunning_exhausted`; voluntary is `cancel` then `period_ended` (or `cancel`
   during a trial). The audit `action` (`subscription.<event>`) keeps them apart for reporting (P0-6, P1-1).
 - Edges the PRD does not list, taken as defaults (D-002): a trial can be cancelled straight to
@@ -40,4 +42,5 @@ stateDiagram-v2
 
 Every transition writes one `AuditEvent` (append-only, INV-19): `action = subscription.<event>`,
 `targetType = subscription`, `targetId`, `actorUserId` (null for a system job), `at`, and
-`data = { from, to }`.
+`data = { from, to }`, plus any fields the move also wrote (`pause` records the moved period and
+`pausedUntil`; `resume` clears it), as calendar-day strings.

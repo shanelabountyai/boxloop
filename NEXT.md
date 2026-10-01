@@ -1,10 +1,10 @@
 # NEXT
 
-## ▶ Next session here: P0-7 pause/resume (pause for 1–3 periods, no charges while paused, anchor shifts by the pause length; pausing in trial is rejected)
+## ▶ Next session here: P0-8 cancellation honouring paid-through (cancel → pending_cancellation, access to period end, a scheduled job flips to cancelled at period end, member can undo before then)
 
-Done 2026-10-01: **P0-5 proration** (D-006). `changePlan(actor, subId, toPlanId, asOf)` in `src/subscriptions/plan-change.ts`; pure `prorationLines()` and `prorateCents()` (half-up, `money.ts`) with hand-calculated fixtures in `tests/unit/money.test.ts`. The downgrade credit is `Subscription.creditCents`, used by `invoiceFor()` in `billing-run.ts` (shared with dunning) and taken off the balance in `advancePeriod()`.
+Done 2026-10-01: **P0-7 pause/resume** (D-007). `pause(actor, subId, periods, asOf)` in `src/subscriptions/pause.ts` moves the paid period and `nextBillingDate` N billing dates on and sets `pausedUntil`; `runBilling()` resumes due pauses before charging. `transition()` now takes an optional `also` (extra fields + guard), written and audited in the same update.
 
-Carry into P0-7:
-- The anchor shift touches `billingAnchor`, which billing dates are counted from (`period.ts`, D-003). Write it as a Subscription write in `transition.ts` (single-writer test). The state machine already has paused/resume edges: check `state.ts`.
-- `changePlan` rejects a paused subscription (only trialing/active can change), and the billing run skips paused ones.
+Carry into P0-8:
+- The state machine already has `cancel` (active → pending_cancellation, trialing → cancelled), `undo_cancel` and `period_ended`. The flip at period end can follow `resumePauses()` in `billing-run.ts`: a step at the start of `runBilling` over rows whose `currentPeriodEnd <= asOf`.
+- `paused` has no `cancel` edge yet. Decide whether a paused member can cancel (likely yes, effective at `currentPeriodEnd`, which a pause has moved later).
 - Still true: hand-write migrations, then `npx prisma migrate deploy` + `npm run db:migrate:test` + `npm run db:generate`, and check that `npx prisma migrate diff --from-config-datasource --to-schema prisma/schema --script` is empty. `git checkout prisma/migrations/migration_lock.toml` before committing.

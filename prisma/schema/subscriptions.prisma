@@ -56,6 +56,7 @@ model Subscription {
   nextBillingDate    DateTime           @db.Date // start of the first unpaid period
   card               MockCard           @default(approves) // written only by setCard() in transition.ts
   creditCents        Int                @default(0) // downgrade credit owed to the next invoice (P0-5); CHECK >= 0 in the migration
+  pausedUntil        DateTime?          @db.Date // the day a pause ends (P0-7); CHECK set exactly when paused, in the migration
   chargeAttempts     ChargeAttempt[]
   planChanges        PlanChange[]
   createdAt          DateTime           @default(now()) @db.Timestamptz(6)

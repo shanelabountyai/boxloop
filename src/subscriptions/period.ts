@@ -21,14 +21,19 @@ export function shift(anchor: Date, n: number, interval: Interval): Date {
   return new Date(Date.UTC(y, m, Math.min(anchor.getUTCDate(), lastDay)));
 }
 
+/** Which billing date `day` is: `shift(anchor, n, interval)` equals `day`. Throws if it is not one. */
+export function periodIndex(anchor: Date, interval: Interval, day: Date): number {
+  const months = (day.getUTCFullYear() - anchor.getUTCFullYear()) * 12 + day.getUTCMonth() - anchor.getUTCMonth();
+  const n = interval === 'year' ? months / 12 : months;
+  if (!Number.isInteger(n) || n < 0 || shift(anchor, n, interval).getTime() !== day.getTime()) {
+    throw new Error(`${day.toISOString().slice(0, 10)} is not a billing date for anchor ${anchor.toISOString().slice(0, 10)}`);
+  }
+  return n;
+}
+
 /** The billing period starting on `start`, which must be one of the anchor's billing dates. */
 export function periodFrom(anchor: Date, interval: Interval, start: Date): { start: Date; end: Date } {
-  const months = (start.getUTCFullYear() - anchor.getUTCFullYear()) * 12 + start.getUTCMonth() - anchor.getUTCMonth();
-  const n = interval === 'year' ? months / 12 : months;
-  if (!Number.isInteger(n) || n < 0 || shift(anchor, n, interval).getTime() !== start.getTime()) {
-    throw new Error(`${start.toISOString().slice(0, 10)} is not a billing date for anchor ${anchor.toISOString().slice(0, 10)}`);
-  }
-  return { start, end: shift(anchor, n + 1, interval) };
+  return { start, end: shift(anchor, periodIndex(anchor, interval, start) + 1, interval) };
 }
 
 /**

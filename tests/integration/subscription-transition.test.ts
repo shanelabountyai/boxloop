@@ -25,12 +25,12 @@ describe('transition()', () => {
   it('moves the status and audits who/what/when/from/to', async () => {
     const { sub, actor, member } = await subscribed();
     expect(await transition(actor, sub.id, 'convert')).toBe('active');
-    expect(await transition({ ...actor, userId: null }, sub.id, 'pause')).toBe('paused'); // a system job
-    expect((await db.subscription.findUniqueOrThrow({ where: { id: sub.id } })).status).toBe('paused');
+    expect(await transition({ ...actor, userId: null }, sub.id, 'payment_failed')).toBe('past_due'); // a system job
+    expect((await db.subscription.findUniqueOrThrow({ where: { id: sub.id } })).status).toBe('past_due');
     const events = await db.auditEvent.findMany({ where: { targetId: sub.id }, orderBy: { id: 'asc' } });
     expect(events).toMatchObject([
       { action: 'subscription.convert', actorUserId: member.id, targetType: 'subscription', data: { from: 'trialing', to: 'active' } },
-      { action: 'subscription.pause', actorUserId: null, data: { from: 'active', to: 'paused' } },
+      { action: 'subscription.payment_failed', actorUserId: null, data: { from: 'active', to: 'past_due' } },
     ]);
     expect(events[0]?.at).toBeInstanceOf(Date);
   });
