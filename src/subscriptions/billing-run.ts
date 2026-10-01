@@ -18,6 +18,16 @@ export const mockCharger: Charger = async (i) => {
 
 const iso = (day: Date) => day.toISOString().slice(0, 10);
 
+/** What a period's invoice charges: the plan price less any downgrade credit (P0-5). */
+export function invoiceFor(sub: { creditCents: number; plan: { priceCents: number } }) {
+  const creditAppliedCents = Math.min(sub.creditCents, sub.plan.priceCents);
+  return { amountCents: sub.plan.priceCents - creditAppliedCents, creditAppliedCents };
+}
+
+/** Charges an invoice, or records it as paid by credit without calling the provider when nothing is owed. */
+export const chargeInvoice = (charge: Charger, i: Parameters<Charger>[0]): Promise<ChargeResult> =>
+  i.amountCents === 0 ? Promise.resolve({ ok: true, ref: 'credit' }) : charge(i);
+
 export async function runBilling(asOf: Date, charge: Charger = mockCharger) {
   const day = calendarDay(asOf);
   const due = await db.subscription.findMany({
@@ -33,15 +43,16 @@ export async function runBilling(asOf: Date, charge: Charger = mockCharger) {
       summary.skipped++;
       continue;
     }
-    const amountCents = sub.plan.priceCents;
+    const { amountCents, creditAppliedCents } = invoiceFor(sub);
     // Charged before recording: if the write below never lands, a rerun sends the same key and the provider replays.
-    const result = await charge({ subscriptionId: sub.id, amountCents, idempotencyKey: `${sub.id}:${iso(key.periodStart)}:1` });
+    const result = await chargeInvoice(charge, { subscriptionId: sub.id, amountCents, idempotencyKey: `${sub.id}:${iso(key.periodStart)}:1` });
     try {
       await db.$transaction(async (t) => {
         await t.chargeAttempt.create({
           data: {
             ...key,
             amountCents,
+            creditAppliedCents,
             outcome: result.ok ? 'succeeded' : 'failed',
             providerRef: result.ok ? result.ref : null,
             failureReason: result.ok ? null : result.reason,
@@ -50,7 +61,7 @@ export async function runBilling(asOf: Date, charge: Charger = mockCharger) {
         });
         const system = { orgId: sub.orgId, userId: null };
         if (!result.ok) return void (await transition(system, sub.id, 'payment_failed', t)); // opens dunning (P0-6)
-        await advancePeriod(t, sub.id, periodFrom(sub.billingAnchor, sub.plan.interval, key.periodStart));
+        await advancePeriod(t, sub.id, periodFrom(sub.billingAnchor, sub.plan.interval, key.periodStart), creditAppliedCents);
         if (sub.status === 'trialing') await transition(system, sub.id, 'convert', t);
       });
     } catch (e) {

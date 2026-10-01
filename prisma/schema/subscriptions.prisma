@@ -55,7 +55,9 @@ model Subscription {
   currentPeriodEnd   DateTime           @db.Date // exclusive; CHECK > start in the migration
   nextBillingDate    DateTime           @db.Date // start of the first unpaid period
   card               MockCard           @default(approves) // written only by setCard() in transition.ts
+  creditCents        Int                @default(0) // downgrade credit owed to the next invoice (P0-5); CHECK >= 0 in the migration
   chargeAttempts     ChargeAttempt[]
+  planChanges        PlanChange[]
   createdAt          DateTime           @default(now()) @db.Timestamptz(6)
 
   @@index([orgId, status])
@@ -72,17 +74,41 @@ enum ChargeOutcome {
 /// billing run; dunning retries (P0-6) are 2, 3, ... The unique key is the idempotency key: a second
 /// run of the same date cannot record a second charge for the same period.
 model ChargeAttempt {
-  id             String        @id @default(uuid()) @db.Uuid
-  subscriptionId String        @db.Uuid
-  subscription   Subscription  @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
-  periodStart    DateTime      @db.Date // the period being paid for: the subscription's nextBillingDate when charged
-  attempt        Int
-  amountCents    Int // CHECK >= 0 in the migration
-  outcome        ChargeOutcome
-  providerRef    String? // set on success
-  failureReason  String? // set on failure
-  attemptedOn    DateTime      @db.Date // the run's asOf (D-003)
-  createdAt      DateTime      @default(now()) @db.Timestamptz(6)
+  id                 String        @id @default(uuid()) @db.Uuid
+  subscriptionId     String        @db.Uuid
+  subscription       Subscription  @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  periodStart        DateTime      @db.Date // the period being paid for: the subscription's nextBillingDate when charged
+  attempt            Int
+  amountCents        Int // CHECK >= 0 in the migration; the plan price less creditAppliedCents
+  creditAppliedCents Int           @default(0) // credit this invoice used up (P0-5); CHECK >= 0 in the migration
+  outcome            ChargeOutcome
+  providerRef        String? // set on success; "credit" when credit covered the whole amount and nothing was charged
+  failureReason      String? // set on failure
+  attemptedOn        DateTime      @db.Date // the run's asOf (D-003)
+  createdAt          DateTime      @default(now()) @db.Timestamptz(6)
 
   @@unique([subscriptionId, periodStart, attempt])
+}
+
+/// A mid-period plan change (P0-5). Inserted, never updated; the line items of its proration. The credit
+/// line (<= 0) is the unused part of the old plan, the charge line (>= 0) the new plan for the same days.
+/// A positive net is charged at once; a negative net becomes Subscription.creditCents for the next invoice.
+/// `seq` numbers a subscription's changes and is the charge's idempotency key, as `attempt` is for charges.
+model PlanChange {
+  id             String       @id @default(uuid()) @db.Uuid
+  subscriptionId String       @db.Uuid
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  seq            Int
+  fromPlanId     String       @db.Uuid
+  toPlanId       String       @db.Uuid
+  effectiveOn    DateTime     @db.Date
+  remainingDays  Int
+  periodDays     Int
+  creditCents    Int // CHECK <= 0 in the migration
+  chargeCents    Int // CHECK >= 0 in the migration
+  netCents       Int // creditCents + chargeCents, CHECKed in the migration
+  providerRef    String? // set when a positive net was charged
+  createdAt      DateTime     @default(now()) @db.Timestamptz(6)
+
+  @@unique([subscriptionId, seq])
 }

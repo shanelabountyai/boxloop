@@ -14,3 +14,14 @@ export function formatCents(cents: number): string {
   const dollars = Math.trunc(abs / 100).toLocaleString('en-US');
   return `${cents < 0 ? '-' : ''}$${dollars}.${String(abs % 100).padStart(2, '0')}`;
 }
+
+/**
+ * `amountCents × remainingDays / periodDays`, rounded half-up, in integers only (P0-5). Callers negate it for a
+ * credit, so a credit and a charge of the same size round to the same magnitude.
+ */
+export function prorateCents(amountCents: number, remainingDays: number, periodDays: number): number {
+  if (![amountCents, remainingDays, periodDays].every(Number.isSafeInteger) || amountCents < 0 || periodDays <= 0 || remainingDays < 0 || remainingDays > periodDays) {
+    throw new Error(`cannot prorate ${amountCents} over ${remainingDays}/${periodDays} days`);
+  }
+  return Math.floor((2 * amountCents * remainingDays + periodDays) / (2 * periodDays));
+}

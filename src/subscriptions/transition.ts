@@ -40,11 +40,12 @@ export async function transition(
  * Moves a paid subscription into `period`, the one it was just charged for (P0-4): the only other write to
  * the row, kept in this file so every Subscription write stays here (D-004). Writes only if
  * `nextBillingDate` is still `period.start`, so a racing run cannot advance the same period twice.
+ * `creditUsedCents` is the credit that invoice used up (P0-5), taken off the balance in the same write.
  */
-export async function advancePeriod(t: Tx, subscriptionId: string, period: { start: Date; end: Date }) {
+export async function advancePeriod(t: Tx, subscriptionId: string, period: { start: Date; end: Date }, creditUsedCents = 0) {
   const { count } = await t.subscription.updateMany({
-    where: { id: subscriptionId, nextBillingDate: period.start },
-    data: { currentPeriodStart: period.start, currentPeriodEnd: period.end, nextBillingDate: period.end },
+    where: { id: subscriptionId, nextBillingDate: period.start, creditCents: { gte: creditUsedCents } },
+    data: { currentPeriodStart: period.start, currentPeriodEnd: period.end, nextBillingDate: period.end, creditCents: { decrement: creditUsedCents } },
   });
   if (count !== 1) throw new StaleTransition(`subscription ${subscriptionId} already moved past ${period.start.toISOString().slice(0, 10)}`);
 }
@@ -54,4 +55,24 @@ export async function setCard(actor: { orgId: string; userId: string | null }, s
   const { count } = await t.subscription.updateMany({ where: { id: subscriptionId, orgId: actor.orgId }, data: { card } });
   if (count !== 1) throw new Error(`subscription ${subscriptionId} not found`);
   await audit(actor, 'subscription.card_updated', { targetType: 'subscription', targetId: subscriptionId, data: { card } }, t);
+}
+
+/**
+ * Points the subscription at another plan and adds a downgrade's credit (P0-5), audited with the PlanChange
+ * row's id. Writes only if the plan and paid period are still the ones the proration was computed from.
+ */
+export async function switchPlan(
+  actor: { orgId: string; userId: string | null },
+  t: Tx,
+  read: { id: string; planId: string; currentPeriodStart: Date },
+  toPlanId: string,
+  creditCents: number,
+  planChangeId: string,
+) {
+  const { count } = await t.subscription.updateMany({
+    where: { ...read, orgId: actor.orgId },
+    data: { planId: toPlanId, creditCents: { increment: creditCents } },
+  });
+  if (count !== 1) throw new StaleTransition(`subscription ${read.id} changed during plan change`);
+  await audit(actor, 'subscription.plan_changed', { targetType: 'subscription', targetId: read.id, data: { from: read.planId, to: toPlanId, planChangeId } }, t);
 }
