@@ -48,9 +48,34 @@ model Subscription {
   currentPeriodStart DateTime           @db.Date
   currentPeriodEnd   DateTime           @db.Date // exclusive; CHECK > start in the migration
   nextBillingDate    DateTime           @db.Date // start of the first unpaid period
+  chargeAttempts     ChargeAttempt[]
   createdAt          DateTime           @default(now()) @db.Timestamptz(6)
 
   @@index([orgId, status])
   @@index([userId])
   @@index([nextBillingDate])
+}
+
+enum ChargeOutcome {
+  succeeded
+  failed
+}
+
+/// One attempt to charge one billing period (P0-4). Inserted, never updated. Attempt 1 is the daily
+/// billing run; dunning retries (P0-6) are 2, 3, ... The unique key is the idempotency key: a second
+/// run of the same date cannot record a second charge for the same period.
+model ChargeAttempt {
+  id             String        @id @default(uuid()) @db.Uuid
+  subscriptionId String        @db.Uuid
+  subscription   Subscription  @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  periodStart    DateTime      @db.Date // the period being paid for: the subscription's nextBillingDate when charged
+  attempt        Int
+  amountCents    Int // CHECK >= 0 in the migration
+  outcome        ChargeOutcome
+  providerRef    String? // set on success
+  failureReason  String? // set on failure
+  attemptedOn    DateTime      @db.Date // the run's asOf (D-003)
+  createdAt      DateTime      @default(now()) @db.Timestamptz(6)
+
+  @@unique([subscriptionId, periodStart, attempt])
 }

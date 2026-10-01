@@ -35,3 +35,16 @@ export async function transition(
   };
   return tx ? run(tx) : db.$transaction(run);
 }
+
+/**
+ * Moves a paid subscription into `period`, the one it was just charged for (P0-4): the only other write to
+ * the row, kept in this file so every Subscription write stays here (D-004). Writes only if
+ * `nextBillingDate` is still `period.start`, so a racing run cannot advance the same period twice.
+ */
+export async function advancePeriod(t: Tx, subscriptionId: string, period: { start: Date; end: Date }) {
+  const { count } = await t.subscription.updateMany({
+    where: { id: subscriptionId, nextBillingDate: period.start },
+    data: { currentPeriodStart: period.start, currentPeriodEnd: period.end, nextBillingDate: period.end },
+  });
+  if (count !== 1) throw new StaleTransition(`subscription ${subscriptionId} already moved past ${period.start.toISOString().slice(0, 10)}`);
+}
