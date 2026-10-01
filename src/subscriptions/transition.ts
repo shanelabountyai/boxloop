@@ -48,3 +48,10 @@ export async function advancePeriod(t: Tx, subscriptionId: string, period: { sta
   });
   if (count !== 1) throw new StaleTransition(`subscription ${subscriptionId} already moved past ${period.start.toISOString().slice(0, 10)}`);
 }
+
+/** Records the member's new mock payment method (P0-6), audited; the third write to the row, kept here for D-004. */
+export async function setCard(actor: { orgId: string; userId: string | null }, subscriptionId: string, card: 'approves' | 'declines', t: Tx) {
+  const { count } = await t.subscription.updateMany({ where: { id: subscriptionId, orgId: actor.orgId }, data: { card } });
+  if (count !== 1) throw new Error(`subscription ${subscriptionId} not found`);
+  await audit(actor, 'subscription.card_updated', { targetType: 'subscription', targetId: subscriptionId, data: { card } }, t);
+}

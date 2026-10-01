@@ -10,8 +10,11 @@ export type ChargeResult = { ok: true; ref: string } | { ok: false; reason: stri
 /** Charges a member. Must replay its first result for a repeated `idempotencyKey`, as Stripe does. */
 export type Charger = (i: { subscriptionId: string; amountCents: number; idempotencyKey: string }) => Promise<ChargeResult>;
 
-// ponytail: approves every charge; P0-6 adds a mock payment method that can decline.
-export const mockCharger: Charger = async (i) => ({ ok: true, ref: `mock_${i.idempotencyKey}` });
+/** The mock provider: approves unless the subscription's mock card is set to decline (P0-6). */
+export const mockCharger: Charger = async (i) => {
+  const { card } = await db.subscription.findUniqueOrThrow({ where: { id: i.subscriptionId }, select: { card: true } });
+  return card === 'approves' ? { ok: true, ref: `mock_${i.idempotencyKey}` } : { ok: false, reason: 'card_declined' };
+};
 
 const iso = (day: Date) => day.toISOString().slice(0, 10);
 

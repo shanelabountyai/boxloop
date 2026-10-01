@@ -1,6 +1,7 @@
 import { now } from '@/core/clock';
 import { db } from '@/core/db';
 import { runBilling } from '@/subscriptions/billing-run';
+import { runDunning } from '@/subscriptions/dunning';
 
 // `npm run billing:run -- --date=YYYY-MM-DD`. The date defaults to today only here, at the edge (D-003).
 const arg = process.argv.find((a) => a.startsWith('--date='))?.slice('--date='.length);
@@ -10,7 +11,8 @@ if (arg !== undefined && (!/^\d{4}-\d{2}-\d{2}$/.test(arg) || asOf.toISOString()
   process.exit(2);
 }
 try {
-  console.log(JSON.stringify({ date: asOf.toISOString().slice(0, 10), ...(await runBilling(asOf)) }));
+  // Billing first, so a charge that fails today opens dunning today; its first retry is tomorrow either way.
+  console.log(JSON.stringify({ date: asOf.toISOString().slice(0, 10), ...(await runBilling(asOf)), dunning: await runDunning(asOf) }));
 } finally {
   await db.$disconnect();
 }
