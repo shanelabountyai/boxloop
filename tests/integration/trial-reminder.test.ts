@@ -56,7 +56,7 @@ describe('trial-ending reminder', () => {
     const { actor, sub } = await trial();
     await applyCoupon(actor, sub.id, 5000, 1, day('2026-02-01'));
     await runBilling(day('2026-02-11'));
-    expect((await reminders())[0].data).toMatchObject({ body: expect.stringContaining('charged $15.00') });
+    expect((await reminders())[0]!.data).toMatchObject({ body: expect.stringContaining('charged $15.00') });
   });
 
   it('a cancelled trial gets none', async () => {
