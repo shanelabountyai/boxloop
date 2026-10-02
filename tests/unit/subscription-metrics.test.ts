@@ -22,6 +22,18 @@ it('a failed conversion counts as converted once dunning recovers it, and as a l
   expect(row).toMatchObject({ trialsConverted: 1, trialsLost: 1, involuntaryChurn: 0, paying: 1, mrrCents: 3000 });
 });
 
+it('a failed conversion in dunning is not MRR until it pays; a paid member in dunning still is (D-016)', () => {
+  const [row] = replay(
+    [
+      created('trial', '2026-01-01', 'trialing'), ev('trial', 'payment_failed', '2026-01-15', 'past_due'),
+      created('paid', '2026-01-01', 'active'), ev('paid', 'payment_failed', '2026-01-20', 'past_due'),
+    ],
+    plans,
+    ['2026-01-31'],
+  );
+  expect(row).toMatchObject({ paying: 1, mrrCents: 3000, trialing: 0 });
+});
+
 it('prices each day by the plan in force, leaves pauses out of MRR, and counts churn in the period it lands in', () => {
   const rows = replay(
     [

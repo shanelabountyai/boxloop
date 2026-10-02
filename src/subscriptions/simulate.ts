@@ -87,9 +87,9 @@ export async function simulate({ start = new Date('2026-01-01T00:00:00Z'), days 
   const charged = new Map<string, { times: number; amountCents: number }>();
   const softDeclined = new Set<string>();
   const charge: Charger = async (i) => {
-    const m = members.find((x) => x.subId === i.subscriptionId)!;
+    const m = members.find((x) => x.subId === i.subscriptionId); // none yet for a signup's first charge
     const renewal = /:(\d{4}-\d{2}-\d{2}):1$/.exec(i.idempotencyKey);
-    if (m.cohort === SOFT_DECLINE_COHORT && renewal && new Date(`${renewal[1]}T00:00:00Z`) >= addDays(m.signupDay, 45) && !softDeclined.has(m.subId!)) {
+    if (m?.cohort === SOFT_DECLINE_COHORT && renewal && new Date(`${renewal[1]}T00:00:00Z`) >= addDays(m.signupDay, 45) && !softDeclined.has(m.subId!)) {
       softDeclined.add(m.subId!);
       return { ok: false, reason: 'insufficient_funds' };
     }
@@ -104,7 +104,7 @@ export async function simulate({ start = new Date('2026-01-01T00:00:00Z'), days 
 
   for (let d = 0; d < days; d++) {
     const day = addDays(start, d);
-    for (const m of members) if (+m.signupDay === +day) m.subId = (await signup(m.actor, plans[m.plan], day)).id; // before billing: a no-trial plan is charged on signup day
+    for (const m of members) if (+m.signupDay === +day) m.subId = (await signup(m.actor, plans[m.plan], day, charge)).id; // a no-trial plan is charged by signup itself (D-015)
     add(runs.billing, await runBilling(day, charge));
     const again = await runBilling(day, charge); // idempotency: a second run the same day charges nothing
     runs.rerunChanges += again.attempted;
@@ -127,8 +127,8 @@ export async function simulate({ start = new Date('2026-01-01T00:00:00Z'), days 
 
 /** Monthly recurring revenue right now: each paying subscription's price per month (a yearly price / 12). */
 async function mrrOn(orgId: string) {
-  const subs = await db.subscription.findMany({ where: { orgId }, include: { plan: true } });
-  const paying = subs.filter((s) => MRR_STATUSES.has(s.status));
+  const subs = await db.subscription.findMany({ where: { orgId }, include: { plan: true, _count: { select: { chargeAttempts: { where: { outcome: 'succeeded' } } } } } });
+  const paying = subs.filter((s) => MRR_STATUSES.has(s.status) && s._count.chargeAttempts > 0); // ever paid (D-016)
   const mrrCents = paying.reduce((sum, s) => sum + monthlyCents(s.plan), 0);
   return { mrrCents, paying: paying.length };
 }

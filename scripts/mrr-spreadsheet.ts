@@ -28,7 +28,7 @@ try {
     if (dates.at(-1)! >= last) break;
   }
 
-  // A sub | B on | C action | D to | E plan | F status after | G plan after | H superseded on | I monthly | J paying
+  // A sub | B on | C action | D to | E plan | F status after | G plan after | H superseded on | I monthly | J paying (and ever active)
   // L..O plans: id, price, interval, monthly.  Q..S month ends: date, MRR cents, paying count.
   const n = events.length + 1;
   const rows = [['sub', 'on', 'action', 'to', 'plan', 'status', 'plan_now', 'until', 'monthly', 'paying', '', 'plan_id', 'price', 'interval', 'monthly', '', 'month_end', 'mrr_cents', 'paying']];
@@ -40,7 +40,7 @@ try {
       q(`=IF(C${r}="subscription.created";E${r};IF(C${r}="subscription.plan_changed";D${r};G${r - 1}))`),
       q(`=IF(A${r + 1}=A${r};B${r + 1};DATE(9999;12;31))`),
       q(`=VLOOKUP(G${r};$L$2:$O$${plans.length + 1};4;0)`),
-      q(`=IF(OR(F${r}="active";F${r}="past_due";F${r}="pending_cancellation");1;0)`),
+      q(`=IF(AND(OR(F${r}="active";F${r}="past_due";F${r}="pending_cancellation");COUNTIFS($A$2:$A${r};A${r};$F$2:$F${r};"active")>0);1;0)`), // ever paid = ever active (D-016)
       '',
       ...(k < plans.length ? [q(plans[k]!.id), String(plans[k]!.priceCents), plans[k]!.interval, q(`=IF(N${r}="year";ROUND(M${r}/12;0);M${r})`)] : ['', '', '', '']),
       '',

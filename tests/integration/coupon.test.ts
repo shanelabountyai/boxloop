@@ -17,13 +17,16 @@ const row = (id: string) => db.subscription.findUniqueOrThrow({ where: { id } })
 const invoices = (subscriptionId: string) =>
   db.chargeAttempt.findMany({ where: { subscriptionId, outcome: 'succeeded' }, orderBy: { periodStart: 'asc' }, select: { amountCents: true, discountCents: true, creditAppliedCents: true } });
 
-/** A member who signs up on 2026-09-01 to `priceCents`/month, with `trialDays` of trial. */
+/**
+ * A member on `priceCents`/month whose first period to bill is 2026-09-01: a trial starts that day, and a no-trial
+ * signup is on 2026-08-01, paid at signup at list price (D-015), so Sep 1 is the first renewal a coupon can discount.
+ */
 async function member(priceCents: number, trialDays = 0) {
   const org = await makeOrg('acme');
   const user = await addMember(org.id, 'member', 'm@acme.test');
   const plan = (cents: number) => db.plan.create({ data: { orgId: org.id, name: `${cents}/month`, priceCents: cents, interval: 'month', trialDays } });
   const actor = { orgId: org.id, userId: user.id };
-  const sub = await signup(actor, (await plan(priceCents)).id, day('2026-09-01'));
+  const sub = await signup(actor, (await plan(priceCents)).id, day(trialDays ? '2026-09-01' : '2026-08-01'));
   return { sub, plan, actor };
 }
 
@@ -33,6 +36,7 @@ describe('applyCoupon', () => {
     await applyCoupon(actor, sub.id, 2500, 2, day('2026-09-01'));
     for (const d of ['2026-09-01', '2026-10-01', '2026-11-01']) await runBilling(day(d));
     expect(await invoices(sub.id)).toEqual([
+      { amountCents: 2000, discountCents: 0, creditAppliedCents: 0 }, // signup
       { amountCents: 1500, discountCents: 500, creditAppliedCents: 0 },
       { amountCents: 1500, discountCents: 500, creditAppliedCents: 0 },
       { amountCents: 2000, discountCents: 0, creditAppliedCents: 0 },
@@ -55,7 +59,7 @@ describe('applyCoupon', () => {
     await runBilling(day('2026-09-01'), declined);
     expect(await row(sub.id)).toMatchObject({ status: 'past_due', couponPeriodsLeft: 1 });
     await runDunning(day('2026-09-02'));
-    expect(await invoices(sub.id)).toEqual([{ amountCents: 1500, discountCents: 500, creditAppliedCents: 0 }]);
+    expect((await invoices(sub.id)).slice(1)).toEqual([{ amountCents: 1500, discountCents: 500, creditAppliedCents: 0 }]);
     expect(await row(sub.id)).toMatchObject({ status: 'active', couponPeriodsLeft: 0, paidOffBps: 2500 });
   });
 
@@ -83,7 +87,7 @@ describe('a coupon meets a plan change', () => {
 
     await runBilling(day('2026-10-01')); // 1000 − 25% = 750, then the 375 credit
     await runBilling(day('2026-11-01'));
-    expect((await invoices(sub.id)).slice(1)).toEqual([
+    expect((await invoices(sub.id)).slice(2)).toEqual([
       { amountCents: 375, discountCents: 250, creditAppliedCents: 375 },
       { amountCents: 1000, discountCents: 0, creditAppliedCents: 0 },
     ]);

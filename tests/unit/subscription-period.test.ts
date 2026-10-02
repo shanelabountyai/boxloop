@@ -63,16 +63,16 @@ describe('signupTerms', () => {
     expect([iso(paid.start), iso(paid.end)]).toEqual(['2026-02-03', '2026-03-03']);
   });
 
-  it('without a trial: active, anchored on signup day, first charge due that day', () => {
+  it('without a trial: active, anchored on signup day, the first period paid at signup and the next due at its end', () => {
     const t = signupTerms({ interval: 'month', trialDays: 0 }, d('2026-01-31'));
     expect(t.status).toBe('active');
     expect([t.currentPeriodStart, t.currentPeriodEnd, t.billingAnchor, t.nextBillingDate].map(iso)).toEqual([
       '2026-01-31',
       '2026-02-28',
       '2026-01-31',
-      '2026-01-31',
+      '2026-02-28',
     ]);
-    expect(periodFrom(t.billingAnchor, 'month', t.nextBillingDate)).toEqual({ start: t.currentPeriodStart, end: t.currentPeriodEnd });
+    expect(periodFrom(t.billingAnchor, 'month', t.currentPeriodStart)).toEqual({ start: t.currentPeriodStart, end: t.currentPeriodEnd });
   });
 
   it('annual plans anchor a year out', () => {

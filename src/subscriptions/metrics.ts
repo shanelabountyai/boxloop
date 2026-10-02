@@ -4,7 +4,8 @@ import { db } from '@/core/db';
 // carries its business day `on` and the state it moved to; `created` also names the plan, `plan_changed` the new one.
 // Plan prices never change (D-001), so a plan id is enough to price a subscription at any point in its history.
 
-export const MRR_STATUSES = new Set(['active', 'past_due', 'pending_cancellation']); // paying or still owed; trials and pauses are not revenue
+/** Paying or still owed, for a member who has paid at least once (D-016): a failed trial conversion in dunning is not revenue, nor are trials and pauses. */
+export const MRR_STATUSES = new Set(['active', 'past_due', 'pending_cancellation']);
 
 type Plan = { id: string; priceCents: number; interval: 'month' | 'year' };
 export type SubEvent = { targetId: string; action: string; data: { on: string; to: string; planId?: string } };
@@ -51,7 +52,7 @@ export function replay(events: SubEvent[], plans: Map<string, Plan>, dates: stri
       if (s.status === 'cancelled') row[!s.everPaid ? 'trialsLost' : action === 'subscription.dunning_exhausted' ? 'involuntaryChurn' : 'voluntaryChurn']++;
     }
     for (const s of subs.values()) {
-      if (MRR_STATUSES.has(s.status)) {
+      if (MRR_STATUSES.has(s.status) && s.everPaid) {
         row.paying++;
         row.mrrCents += monthlyCents(plans.get(s.planId)!);
       } else if (s.status === 'trialing') row.trialing++;

@@ -1,10 +1,10 @@
 # NEXT
 
-## ▶ Next session here: post-closure reviews, in this order (Shane, 2026-10-02). Model: Opus.
-1. `/code-review high` on the billing code (`src/subscriptions/`): proration rounding, dunning catch-up, period-advance races, coupon/credit ordering.
-2. `/security-review`: org scoping, since the billing run is global.
-3. Fix what survives verification, then re-run `npm test`, `npm run simulate`, `npm run mrr:check`, and update `docs/DEMO.md` / the brief if any number changes.
+## ▶ Next session here: `/security-review` (org scoping, since the billing run is global). Model: Opus.
+Then re-run `npm test`, `npm run simulate`, `npm run mrr:check` if anything changes, and update `docs/DEMO.md` / the brief if a number moves.
 After that, optional: `ponytail-audit`, `testing-strategy`. Feature candidate if wanted: an operator login for the `sim` org so the metrics page has data in the demo.
+
+Done 2026-10-02: `/code-review high` on `src/subscriptions/` (commits 3121f57 and the next one). Fixed: racing writes (advancePeriod/switchPlan status guards, InvalidTransition no longer aborts a run), pause day drift (D-007), charge-at-signup (D-015), MRR excludes never-paid (D-016). Not changed, by design: charge-before-record (D-004), per-line proration rounding (D-006), one period per run (ponytail note), updateCard has no per-day cap (mock only). Sim and mrr:check numbers unchanged.
 
 Closure done 2026-10-02: `docs/DEMO.md`, cost review (D-014), BoxLoop in Brief, Ledger posts #94/#95. URLs in `docs/RELEASE_NOTES.md`.
 

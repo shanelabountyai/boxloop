@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/core/db';
-import { signup } from '@/subscriptions/signup';
+import { signup, SignupDeclined } from '@/subscriptions/signup';
 import { resetAuthTables } from '../helpers/auth';
 import { addMember, makeOrg } from '../helpers/org';
 
@@ -34,12 +34,24 @@ describe('signup', () => {
     expect(ev.data).toEqual({ from: null, to: 'trialing', planId: p.id, on: '2026-01-31' });
   });
 
-  it('a no-trial plan starts active with the first charge due on signup day', async () => {
+  it('a no-trial plan charges the first period at signup and starts active, paid through the period end', async () => {
     const { plan, actor } = await setup();
     const p = await plan(0);
-    const row = await signup(actor, p.id, new Date('2026-01-31T00:00:00Z'));
+    const keys: string[] = [];
+    const row = await signup(actor, p.id, new Date('2026-01-31T00:00:00Z'), async (i) => (keys.push(i.idempotencyKey), { ok: true, ref: 'r1' }));
     expect(row.status).toBe('active');
-    expect([row.nextBillingDate, row.currentPeriodEnd].map(iso)).toEqual(['2026-01-31', '2026-02-28']);
+    expect([row.nextBillingDate, row.currentPeriodEnd].map(iso)).toEqual(['2026-02-28', '2026-02-28']);
+    expect(keys).toEqual([`${row.id}:2026-01-31:1`]);
+    expect(await db.chargeAttempt.findMany({ select: { subscriptionId: true, attempt: true, amountCents: true, outcome: true, providerRef: true } })).toEqual([
+      { subscriptionId: row.id, attempt: 1, amountCents: 3000, outcome: 'succeeded', providerRef: 'r1' },
+    ]);
+  });
+
+  it('a declined first charge creates nothing', async () => {
+    const { plan, actor } = await setup();
+    const p = await plan(0);
+    await expect(signup(actor, p.id, new Date('2026-01-31T00:00:00Z'), async () => ({ ok: false, reason: 'card_declined' }))).rejects.toThrow(SignupDeclined);
+    expect([await db.subscription.count(), await db.chargeAttempt.count(), await db.auditEvent.count({ where: { action: 'subscription.created' } })]).toEqual([0, 0, 0]);
   });
 
   it('refuses archived plans and plans from another org', async () => {

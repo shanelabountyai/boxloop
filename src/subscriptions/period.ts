@@ -38,8 +38,8 @@ export function periodFrom(anchor: Date, interval: Interval, start: Date): { sta
 
 /**
  * Billing fields for a signup on `asOf`. With a trial, the trial is the first period and its end is both
- * the anchor and the conversion charge date. Without one, the first period is charged on signup day.
- * `nextBillingDate` is always the start of the first unpaid period, so a charge on it is followed by
+ * the anchor and the conversion charge date. Without one, the first period is charged by `signup()` itself (D-015),
+ * so it starts paid. `nextBillingDate` is always the start of the first unpaid period, so a charge on it is followed by
  * `periodFrom(billingAnchor, interval, nextBillingDate)`, both on conversion and on renewal.
  */
 export function signupTerms(plan: { interval: Interval; trialDays: number }, asOf: Date) {
@@ -51,6 +51,6 @@ export function signupTerms(plan: { interval: Interval; trialDays: number }, asO
     billingAnchor,
     currentPeriodStart: signup,
     currentPeriodEnd: trialing ? billingAnchor : shift(billingAnchor, 1, plan.interval),
-    nextBillingDate: billingAnchor,
+    nextBillingDate: trialing ? billingAnchor : shift(billingAnchor, 1, plan.interval),
   };
 }
