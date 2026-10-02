@@ -22,7 +22,7 @@ No password: `/demo` signs in with one click when `DEMO_MODE=1`.
 
 | Account | Role | Where the credential lives |
 |---|---|---|
-| owner@acme.demo.test | owner of Acme Studio | none needed; TOTP secret `JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP` is public by design and printed by `seed:demo` |
+| owner@acme.demo.test | owner of Acme Studio; admin of `sim` after `simulate` | none needed; TOTP secret `JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP` is public by design and printed by `seed:demo` |
 | admin@acme.demo.test | admin | same |
 | member@acme.demo.test | member | none |
 | the same three at globex.demo.test | Globex Labs | same |
@@ -89,12 +89,13 @@ npm run dev        # http://localhost:4800
 1. Open http://localhost:4800/demo and click **owner@acme.demo.test**.
 2. Go to **/o/acme/plans**. Create a plan (for example Starter, $10.00 monthly, 14-day trial). Say: price terms are locked once created; a database trigger refuses edits, so repricing means a new plan.
 3. Open **/o/acme/metrics** (owner and admin only). It shows "No subscriptions yet" for a fresh org.
+4. Open **/o/sim/metrics**. This is screen 1's simulation on the dashboard: the same month-end MRR (from $555.00 in January to $1,115.00), 88.37% trial conversion and churn. Rows after June stay flat, because the sim stops there and the table runs on to today. `simulate` makes owner@acme an admin of `sim` each time it reseeds, so run `seed:demo` before `simulate`.
 
 Stop the dev server when done (`lsof -ti :4800 | xargs kill`).
 
 ## What to concede before you're asked
 
-- **The metrics page has no data in the demo.** The simulation runs in its own org (`sim`) with no operator login, so the page that charts it is not reachable from `/demo`. The proof of the numbers is screens 1 and 2, not the chart.
+- **The dashboard's data is the simulation, not live traffic.** `/o/sim/metrics` charts the 180-day sim; the proof of the numbers is screens 1 and 2, not the chart.
 - **No member-facing signup or checkout screen.** Signup, plan change, pause, cancel and coupons are domain functions with tests, not UI. The UI covers plans, members and metrics only.
 - **The payment provider is a mock.** No Stripe account, no real card. The sim scripts its declines.
 - **MRR is at list price.** Coupons are not netted out (D-011 says how).

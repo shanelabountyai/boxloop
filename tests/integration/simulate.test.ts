@@ -2,12 +2,14 @@ import { beforeEach, expect, it } from 'vitest';
 import { db } from '@/core/db';
 import { monthlyMetrics, trialConversionBps } from '@/subscriptions/metrics';
 import { passed, simulate } from '@/subscriptions/simulate';
+import { seedDemo } from '../../scripts/seed-demo';
 import { resetAuthTables } from '../helpers/auth';
 
 // D-009: the 180-day simulation meets the PRD's success metrics, and its numbers match a hand tally of the cohorts.
 beforeEach(resetAuthTables);
 
 it('runs 180 days with no duplicate charge, a reconciled ledger and the hand-tallied outcomes', async () => {
+  await seedDemo(); // the demo operator, attached to `sim` below
   const r = await simulate();
   expect(passed(r)).toBe(true);
   expect(r.duplicateCharges).toEqual({ ledger: 0, provider: 0 });
@@ -27,4 +29,6 @@ it('runs 180 days with no duplicate charge, a reconciled ledger and the hand-tal
   // The dashboard's month ends, through the sim's last day, are the same rows.
   const { id } = await db.org.findUniqueOrThrow({ where: { slug: 'sim' } });
   expect(await monthlyMetrics(id, '2026-06-29')).toEqual(r.fromEvents);
+  // ...and the demo operator can reach them from /demo.
+  expect(await db.membership.findFirst({ where: { orgId: id, user: { email: 'owner@acme.demo.test' } }, select: { role: true } })).toEqual({ role: 'admin' });
 }, 60_000);

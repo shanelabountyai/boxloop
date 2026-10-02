@@ -1,7 +1,8 @@
 # NEXT
 
-## ▶ Next session here: optional only. Project is closed and reviewed. Pick one or stop.
-- Feature candidate: an operator login for the `sim` org so the metrics page has data in the demo.
+## ▶ Next session here: nothing queued. Project is closed and reviewed.
+
+Done 2026-10-02: the demo can now reach the sim's dashboard. `simulate` makes seed:demo's owner@acme an admin of `sim` after each reseed, so `/o/sim/metrics` charts the 180-day run (DEMO.md screen 5 step 4). No new isDemo user, so INV-27's "only seed-demo sets isDemo" still holds. Checked in the real app.
 
 Done 2026-10-02: ponytail-audit, applied in the next commit except plan-change.ts's P2002 catch, which rethrows as StaleTransition rather than skipping, so it stays. Net line count is about even: the new helpers carry doc comments. Suite 321/321. The project's own code (~1.3k lines) is lean, with no dependencies to cut. Shrinks:
 1. Lost-race catch `code !== 'P2002' && !(StaleTransition || InvalidTransition)` is repeated in billing-run.ts and dunning.ts (x2). Make it one `lostRace(e)` in transition.ts.
@@ -22,5 +23,5 @@ Closure done 2026-10-02: `docs/DEMO.md`, cost review (D-014), BoxLoop in Brief, 
 
 Carry forward:
 - Sim needs no subscriptions outside org `sim`. `billing:run` after `simulate` leaves extra charges; rerun `simulate`.
-- Brief screenshots came from `/o/sim/metrics` and `/o/sim/plans` with owner@acme temporarily made an owner of `sim` (psql insert, removed after).
+- Brief screenshots came from `/o/sim/metrics` and `/o/sim/plans` (owner@acme now reaches them through `simulate`, so no psql insert is needed).
 - Hand-write migrations, then `npx prisma migrate deploy` + `npm run db:migrate:test` + `npm run db:generate`; `git checkout prisma/migrations/migration_lock.toml` before committing.

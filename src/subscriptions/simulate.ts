@@ -17,6 +17,7 @@ import { transition } from './transition';
 
 export const SIM_ORG = 'sim';
 const SIM_EMAIL = '@sim.boxloop.test';
+const SIM_OPERATOR = 'owner@acme.demo.test';
 const MEMBERS = 50;
 
 const PLANS = {
@@ -73,6 +74,9 @@ export async function simulate({ start = new Date('2026-01-01T00:00:00Z'), days 
   const org = await db.org.create({ data: { slug: SIM_ORG, name: 'BoxLoop simulation' } });
   const plans = {} as Record<PlanKey, string>;
   for (const [k, p] of Object.entries(PLANS)) plans[k as PlanKey] = (await db.plan.create({ data: { orgId: org.id, ...p } })).id;
+  // The demo operator: seed:demo's Acme owner, made admin here so /o/sim/metrics is reachable from /demo.
+  const operator = await db.user.findFirst({ where: { email: SIM_OPERATOR, isDemo: true } });
+  if (operator) await db.membership.create({ data: { orgId: org.id, userId: operator.id, role: 'admin' } });
 
   const members: Member[] = [];
   for (let i = 0; i < MEMBERS; i++) {
