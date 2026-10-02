@@ -10,5 +10,5 @@ test('demo sign-in lands a seeded owner in their org', async ({ page }) => {
   await page.getByRole('button', { name: 'owner@acme.demo.test' }).click();
   await expect(page.getByRole('heading', { name: 'Your orgs' })).toBeVisible();
   await page.getByRole('link', { name: 'Acme Studio' }).click();
-  await expect(page.getByRole('navigation')).toContainText('Acme Studio');
+  await expect(page.getByRole('navigation', { name: 'Main' })).toContainText('Acme Studio');
 });

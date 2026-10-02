@@ -16,6 +16,10 @@ export const daysBetween = (from: Date, to: Date) => (to.getTime() - from.getTim
 /** A calendar day as YYYY-MM-DD. */
 export const iso = (day: Date) => day.toISOString().slice(0, 10);
 
+/** A calendar day for people: "Nov 14", or "Nov 14, 2027" when its year is not `today`'s. Never a time of day. */
+export const formatDay = (day: Date, today: Date) =>
+  day.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC', ...(day.getUTCFullYear() !== today.getUTCFullYear() && { year: 'numeric' }) });
+
 /**
  * `anchor` moved `n` intervals on, its day clamped to the target month's length (Jan 31 → Feb 28 → Mar 31).
  * Always counted from the anchor, never from the previous period, so a short month cannot drag the anchor.

@@ -1,8 +1,8 @@
 # NEXT
 
-## ▶ Next session here: implement the Claude Design output for `docs/DESIGN_BRIEF.md`.
+## ▶ Next session here: refresh the BoxLoop in Brief screenshots with the styled UI (optional), or nothing: the design pass is done.
 
-Brief refreshed 2026-10-02 (D-015 charge at signup, D-020 billing-day refusal, metrics page as screen 8). Shane pastes the whole brief into Claude Design; the next session implements what comes back, following the brief's last section (globals.css first, then header/home, member page, operator pages; foundation:drift, e2e, 360/1280 screenshots in both themes). Model: Sonnet for the CSS/page wiring; the member page's confirm previews call billing functions, so check those against D-015/D-020.
+Done 2026-10-02: design pass 1 implemented from Claude Design project `25b0df2e-3469-4bac-90f5-82ff943d3803` (BoxLoop Design.dc.html). `src/app/globals.css` (tokens, light/dark, element styles) styles the template pages unedited. New: header + org nav, home, `/o/[org]/subscription` (picker, card, confirm previews, history), `/o/[org]/subscribers` and `/subscribers/[id]` (read-only, audit timeline), not-found; plans and metrics restyled. D-022 (one stylesheet, `<details>` confirms with no client JS), D-023 (only state-machine actions; no Cancel on paused/past_due; resubscribe = picker under an ended card; member actions take no subscription id). The design board's open questions (Resume, Resubscribe, Metrics in the header) were defaulted in D-023. Gate: vitest 321/321, e2e 11/11 (new `e2e/subscription.spec.ts`), foundation:drift clean, 360/1280 screenshots in both themes with no overflow. The brief's screenshots predate the styling.
 
 Done 2026-10-02: the demo can now reach the sim's dashboard. `simulate` makes seed:demo's owner@acme an admin of `sim` after each reseed, so `/o/sim/metrics` charts the 180-day run (DEMO.md screen 5 step 4). No new isDemo user, so INV-27's "only seed-demo sets isDemo" still holds. Checked in the real app.
 

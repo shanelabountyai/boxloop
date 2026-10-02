@@ -80,7 +80,7 @@ About 30 seconds, 43 files, 321 tests. Point to three files:
 
 The status table is in `docs/STATE_MACHINE.md`. A test fails if any code other than `transition()` writes a subscription's status.
 
-## Screen 5 — The UI (2 min)
+## Screen 5 — The UI (4 min)
 
 ```bash
 npm run dev        # http://localhost:4800
@@ -91,12 +91,17 @@ npm run dev        # http://localhost:4800
 3. Open **/o/acme/metrics** (owner and admin only). It shows "No subscriptions yet" for a fresh org.
 4. Open **/o/sim/metrics**. This is screen 1's simulation on the dashboard: the same month-end MRR (from $555.00 in January to $1,115.00), 88.37% trial conversion and churn. Rows after June stay flat, because the sim stops there and the table runs on to today. `simulate` makes owner@acme an admin of `sim` each time it reseeds, so run `seed:demo` before `simulate`.
 
+5. In a private window, open /demo and click **member@acme.demo.test**, then **Acme Studio**. The org opens on **My subscription**, which shows the plan picker. Say: a trial plan says when the first charge falls; a no-trial plan says "You'll be charged $X today" (D-015). Tick *the mock provider declines this payment* on a no-trial plan to show that a decline creates nothing.
+6. Start the trial. The card shows the status pill and the dates line: "Trial ends …, then $10.00/month". Open **Change plan** to show the preview before confirming, then **Cancel trial**: "Your trial ends now, nothing was charged."
+7. Back as owner@acme, open **Subscribers** and click the member. Say: the operator view is read-only, and the audit timeline names who made each change (member, operator or System) with from → to.
+
 Stop the dev server when done (`lsof -ti :4800 | xargs kill`).
 
 ## What to concede before you're asked
 
 - **The dashboard's data is the simulation, not live traffic.** `/o/sim/metrics` charts the 180-day sim; the proof of the numbers is screens 1 and 2, not the chart.
-- **No member-facing signup or checkout screen.** Signup, plan change, pause, cancel and coupons are domain functions with tests, not UI. The UI covers plans, members and metrics only.
+- **Card entry is a toggle.** The member screens cover signup, plan change, pause, cancel and undo, and "update payment method" chooses a mock card that approves or declines. Coupons are CLI-only.
+- **A paused or past-due member cannot cancel from the UI**, because the state machine has no edge for it (D-008, D-023).
 - **The payment provider is a mock.** No Stripe account, no real card. The sim scripts its declines.
 - **MRR is at list price.** Coupons are not netted out (D-011 says how).
 - **Trial reminders use the generic notice email template**, because the templates belong to the foundation.

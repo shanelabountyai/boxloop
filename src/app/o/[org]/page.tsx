@@ -1,13 +1,9 @@
-import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { requireOrg } from '@/core/authz/guards';
+import { can } from '@/core/authz/permissions';
 
-// The clone replaces this page with its own home. It stays a guarded empty state until then.
+// The org's home is where each role acts: an operator's subscribers, a member's own subscription.
 export default async function OrgHome({ params }: { params: Promise<{ org: string }> }) {
   const ctx = await requireOrg((await params).org);
-  return (
-    <main>
-      <h1>Nothing here yet</h1>
-      <p>This org is ready. <Link href={`/o/${ctx.slug}/settings/members`}>Invite your team</Link> to get started.</p>
-    </main>
-  );
+  redirect(`/o/${ctx.slug}/${can(ctx.role, 'org.update') ? 'subscribers' : 'subscription'}`);
 }

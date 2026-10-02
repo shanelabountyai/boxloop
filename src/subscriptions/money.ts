@@ -8,11 +8,11 @@ export function parseCents(input: string): number | null {
   return Number.isSafeInteger(cents) ? cents : null;
 }
 
-/** 2999 → "$29.99"; negative amounts (credits) get a leading minus. */
+/** 2999 → "$29.99"; negative amounts (credits) get a leading true minus (U+2212), "−$7.50". */
 export function formatCents(cents: number): string {
   const abs = Math.abs(cents);
   const dollars = Math.trunc(abs / 100).toLocaleString('en-US');
-  return `${cents < 0 ? '-' : ''}$${dollars}.${String(abs % 100).padStart(2, '0')}`;
+  return `${cents < 0 ? '−' : ''}$${dollars}.${String(abs % 100).padStart(2, '0')}`;
 }
 
 /** `n / d` in basis points, rounded half-up; 0 when `d` is 0. */

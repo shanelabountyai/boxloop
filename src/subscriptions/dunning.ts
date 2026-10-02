@@ -23,10 +23,17 @@ const loadPastDue = (where: Prisma.SubscriptionWhereInput) =>
   });
 
 /** The unpaid period's attempts, and its day 0. Null when the period has no failed attempt 1 to count from. */
-function sequence(sub: PastDue) {
+export function sequence(sub: Pick<PastDue, 'nextBillingDate' | 'chargeAttempts'>) {
   const attempts = sub.chargeAttempts.filter((a) => a.periodStart.getTime() === sub.nextBillingDate.getTime());
   const first = attempts.find((a) => a.attempt === 1 && a.outcome === 'failed');
   return first && { attempts, day0: first.attemptedOn };
+}
+
+/** What a past_due member is told: the next scheduled retry after the last attempt (null when none is left), and the cancel day. Pure. */
+export function dunningOutlook(seq: NonNullable<ReturnType<typeof sequence>>) {
+  const last = seq.attempts.at(-1)!.attemptedOn;
+  const i = RETRY_DAYS.findIndex((d) => addDays(seq.day0, d) > last);
+  return { failedOn: seq.day0, retry: i < 0 ? null : { n: i + 1, of: RETRY_DAYS.length, on: addDays(seq.day0, RETRY_DAYS[i]!) }, cancelsOn: addDays(seq.day0, CANCEL_DAY) };
 }
 
 const notify = (sub: PastDue, subject: string, body: string, t: Prisma.TransactionClient) =>

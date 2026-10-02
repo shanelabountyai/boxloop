@@ -17,17 +17,24 @@ export default async function Plans({ params }: { params: Promise<{ org: string 
   return (
     <main>
       <h1>Plans</h1>
-      {plans.length === 0 && <p>No plans yet.</p>}
+      {plans.length === 0 && <p className="muted">No plans yet. Members can subscribe once you create one.</p>}
       {plans.map((p) => (
-        <section key={p.id}>
-          <h2>
-            {p.name}
-            {p.archivedAt && ' (archived)'}
-          </h2>
-          <p>
-            {formatCents(p.priceCents)} / {p.interval}
-            {p.trialDays > 0 && ` · ${p.trialDays}-day trial`}
-          </p>
+        <section key={p.id} className="card">
+          <div className="card-head">
+            <h2>
+              {p.name}{' '}
+              {p.archivedAt && (
+                <span className="pill" data-k="done">
+                  Archived
+                </span>
+              )}
+            </h2>
+            <p className="price">
+              {formatCents(p.priceCents)}
+              <span>/{p.interval}</span>
+            </p>
+          </div>
+          <p className="muted">{p.trialDays > 0 ? `${p.trialDays} days free, then ${formatCents(p.priceCents)}/${p.interval}` : 'No trial, charged at signup'}</p>
           {manage && (
             <>
               <ActionForm action={bind(renamePlan)}>
@@ -47,9 +54,14 @@ export default async function Plans({ params }: { params: Promise<{ org: string 
       ))}
 
       {manage && (
-        <>
+        <section className="card">
           <h2>New plan</h2>
-          <p>Price, interval and trial cannot change later. To reprice, create a new plan and archive the old one; current subscribers keep their terms.</p>
+          <p className="box" data-k="end">
+            <strong>
+              <span aria-hidden="true">◐ </span>Price, interval and trial cannot change later.
+            </strong>
+            <span>To reprice, create a new plan and archive the old one; current subscribers keep their terms.</span>
+          </p>
           <ActionForm action={bind(createPlan)}>
             <label>Name <input name="name" required maxLength={120} /></label>
             <label>Price (USD) <input name="price" required inputMode="decimal" pattern="\$?[0-9,]+(\.[0-9]{1,2})?" placeholder="29.99" /></label>
@@ -61,9 +73,9 @@ export default async function Plans({ params }: { params: Promise<{ org: string 
               </select>
             </label>
             <label>Trial days <input name="trialDays" type="number" min={0} max={365} defaultValue={0} /></label>
-            <button type="submit">Create plan</button>
+            <button type="submit" className="primary">Create plan</button>
           </ActionForm>
-        </>
+        </section>
       )}
     </main>
   );
