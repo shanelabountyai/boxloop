@@ -26,6 +26,17 @@ describe('plan table', () => {
     await db.plan.update({ where: { id: p.id }, data: { name: 'Renamed', archivedAt: new Date() } });
     expect(await db.plan.findUniqueOrThrow({ where: { id: p.id } })).toMatchObject({ name: 'Renamed', priceCents: 3000, trialDays: 14 });
   });
+
+  it("refuses a subscription on another org's plan, on create and on switch (security review 2026-10-02)", async () => {
+    const [a, b] = [await makeOrg('acme'), await makeOrg('other')];
+    const [mine, theirs] = [await plan(a.id), await plan(b.id)];
+    const member = await addMember(a.id, 'member', 'm@acme.test');
+    const day = new Date('2026-01-01T00:00:00Z');
+    const data = { orgId: a.id, userId: member.id, status: 'trialing' as const, billingAnchor: day, currentPeriodStart: day, currentPeriodEnd: new Date('2026-01-15T00:00:00Z'), nextBillingDate: day };
+    await expect(db.subscription.create({ data: { ...data, planId: theirs.id } })).rejects.toThrow(/Subscription_planId_orgId_fkey|Foreign key/);
+    const sub = await db.subscription.create({ data: { ...data, planId: mine.id } });
+    await expect(db.subscription.update({ where: { id: sub.id }, data: { planId: theirs.id } })).rejects.toThrow(/Subscription_planId_orgId_fkey|Foreign key/);
+  });
 });
 
 describe('plan actions', () => {

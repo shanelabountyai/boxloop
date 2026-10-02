@@ -1,8 +1,10 @@
 # NEXT
 
-## ▶ Next session here: `/security-review` (org scoping, since the billing run is global). Model: Opus.
-Then re-run `npm test`, `npm run simulate`, `npm run mrr:check` if anything changes, and update `docs/DEMO.md` / the brief if a number moves.
-After that, optional: `ponytail-audit`, `testing-strategy`. Feature candidate if wanted: an operator login for the `sim` org so the metrics page has data in the demo.
+## ▶ Next session here: optional only. Project is closed and reviewed. Pick one or stop.
+- `ponytail-audit` (Sonnet), `testing-strategy` (Opus).
+- Feature candidate: an operator login for the `sim` org so the metrics page has data in the demo.
+
+Done 2026-10-02: security review (org scoping). No exploitable issue: org pages and actions all go through `requireOrg` + `inOrg`; subscription writers are reachable only from CLI scripts and scope by `actor.orgId`. Hardened with a composite FK so a subscription's plan must be in its own org (D-017, migration `20261002100000_plan_same_org`, test in `tests/integration/plans.test.ts`). Template-owned paths (auth, webhook, share links) were not reviewed here.
 
 Done 2026-10-02: `/code-review high` on `src/subscriptions/` (commits 3121f57 and the next one). Fixed: racing writes (advancePeriod/switchPlan status guards, InvalidTransition no longer aborts a run), pause day drift (D-007), charge-at-signup (D-015), MRR excludes never-paid (D-016). Not changed, by design: charge-before-record (D-004), per-line proration rounding (D-006), one period per run (ponytail note), updateCard has no per-day cap (mock only). Sim and mrr:check numbers unchanged.
 

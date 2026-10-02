@@ -20,6 +20,7 @@ model Plan {
   subscriptions Subscription[]
   createdAt     DateTime        @default(now()) @db.Timestamptz(6)
 
+  @@unique([id, orgId]) // target of Subscription's composite FK: a subscription's plan is in its own org
   @@index([orgId])
 }
 
@@ -48,7 +49,7 @@ model Subscription {
   userId             String             @db.Uuid
   user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   planId             String             @db.Uuid
-  plan               Plan               @relation(fields: [planId], references: [id], onDelete: NoAction) // plans archive, never delete; NoAction (end-of-statement) lets an org delete cascade both
+  plan               Plan               @relation(fields: [planId, orgId], references: [id, orgId], onDelete: NoAction) // plans archive, never delete; NoAction (end-of-statement) lets an org delete cascade both
   status             SubscriptionStatus
   billingAnchor      DateTime           @db.Date // trial end, or signup day without a trial; billing dates are counted from it
   currentPeriodStart DateTime           @db.Date
