@@ -1,8 +1,17 @@
 # NEXT
 
 ## ▶ Next session here: optional only. Project is closed and reviewed. Pick one or stop.
-- `ponytail-audit` (Sonnet).
+- Apply the ponytail-audit shrinks below (Sonnet). About -15 lines, no behaviour change.
 - Feature candidate: an operator login for the `sim` org so the metrics page has data in the demo.
+
+Done 2026-10-02: ponytail-audit (report only, nothing applied). The project's own code (~1.3k lines) is lean, with no dependencies to cut. Shrinks:
+1. Lost-race catch `code !== 'P2002' && !(StaleTransition || InvalidTransition)` is repeated in billing-run.ts and dunning.ts (x2). Make it one `lostRace(e)` in transition.ts.
+2. `iso` is defined 3 times (billing-run, dunning, simulate) and `.toISOString().slice(0, 10)` is inlined about 10 more. Export one `iso` from period.ts.
+3. `DAY_MS` is redefined in pause.ts and plan-change.ts. Export `daysBetween(a, b)` from period.ts.
+4. Half-up ratio `floor((n*20000+d)/(2d))` is in trialConversionBps and simulate's recoveryRateBps, and `pct` is in the metrics page and simulate report. Add `ratioBps` and `formatBps` to money.ts.
+5. `sequence(sub)` is computed in runDunning and again in retry. Pass it in.
+6. Drop `export` from TRIAL_REMINDER_DAYS, RETRY_DAYS, CANCEL_DAY and Interval, which are used only in their own files.
+Out of scope (template-owned, cut upstream if anywhere): spikes/, audit/, OLD_DO_NOT_USE_FOUNDATION_SPEC.drizzle-draft.md.
 
 Done 2026-10-02: testing-strategy pass. Added 7 tests (lost-write replay, provider throw, yearly renewal + pause, billing-day refusal, late card fix, every-anchor period sweep). Found and fixed: a declined upgrade's key replayed the decline forever, so the mock now replays keys like a real provider (D-018). Locked current behaviour as D-019 (yearly pause = years), D-020 (billing day before the run refuses plan change/pause), D-021 (card fixed after day 10 still recovers). Full suite 321/321 (43 files), EXIT=0.
 
