@@ -107,12 +107,12 @@ export async function runBilling(asOf: Date, charge: Charger = mockCharger) {
         });
         const system = { orgId: sub.orgId, userId: null };
         if (!result.ok) return void (await transition(system, sub.id, 'payment_failed', day, t)); // opens dunning (P0-6)
-        await advancePeriod(t, sub.id, periodFrom(sub.billingAnchor, sub.plan.interval, key.periodStart), invoice);
+        await advancePeriod(t, sub.id, sub.status, periodFrom(sub.billingAnchor, sub.plan.interval, key.periodStart), invoice);
         if (sub.status === 'trialing') await transition(system, sub.id, 'convert', day, t);
       });
     } catch (e) {
       // Another run recorded this period, or moved the subscription, after our read.
-      if ((e as { code?: string }).code !== 'P2002' && !(e instanceof StaleTransition)) throw e;
+      if ((e as { code?: string }).code !== 'P2002' && !(e instanceof StaleTransition || e instanceof InvalidTransition)) throw e;
       summary.skipped++;
       continue;
     }

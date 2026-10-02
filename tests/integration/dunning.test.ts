@@ -3,6 +3,7 @@ import { db } from '@/core/db';
 import { type Charger, runBilling } from '@/subscriptions/billing-run';
 import { runDunning, updateCard } from '@/subscriptions/dunning';
 import { signup } from '@/subscriptions/signup';
+import { transition } from '@/subscriptions/transition';
 import { resetAuthTables } from '../helpers/auth';
 import { addMember, makeOrg } from '../helpers/org';
 
@@ -109,5 +110,15 @@ describe('updateCard', () => {
     await updateCard(actor, sub.id, 'approves', day('2026-02-15'));
     expect(await updateCard(actor, sub.id, 'approves', day('2026-02-15'))).toBeNull(); // already active
     expect(await attempts(sub.id)).toHaveLength(2);
+  });
+
+  it('a retry whose subscription is cancelled while the charge is in flight is skipped, not recovered', async () => {
+    const { sub } = await failedOn0214();
+    const cancelling: Charger = async () => {
+      await transition({ orgId: sub.orgId, userId: null }, sub.id, 'dunning_exhausted', day('2026-02-15'));
+      return { ok: true, ref: 'late' };
+    };
+    expect(await runDunning(day('2026-02-15'), cancelling)).toEqual({ retried: 0, recovered: 0, cancelled: 0, skipped: 1 });
+    expect(await row(sub.id)).toMatchObject({ status: 'cancelled', nextBillingDate: day('2026-02-14') });
   });
 });

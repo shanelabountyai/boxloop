@@ -3,7 +3,7 @@ import { db } from '@/core/db';
 import { type Charger, runBilling } from '@/subscriptions/billing-run';
 import { changePlan, PlanChangeDeclined } from '@/subscriptions/plan-change';
 import { signup } from '@/subscriptions/signup';
-import { StaleTransition } from '@/subscriptions/transition';
+import { StaleTransition, transition } from '@/subscriptions/transition';
 import { resetAuthTables } from '../helpers/auth';
 import { addMember, makeOrg } from '../helpers/org';
 
@@ -115,5 +115,16 @@ describe('changePlan', () => {
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
     expect(results.find((r) => r.status === 'rejected')).toMatchObject({ reason: expect.any(StaleTransition) });
     expect(await db.planChange.count()).toBe(1);
+  });
+
+  it('a cancel landing while the upgrade is charged stops the switch', async () => {
+    const { sub, plan, actor } = await paidSince0901(3000);
+    const bigger = await plan(6000);
+    const cancelling: Charger = async (i) => {
+      await transition(actor, sub.id, 'cancel', day('2026-09-16'));
+      return { ok: true, ref: `ref_${i.idempotencyKey}` };
+    };
+    await expect(changePlan(actor, sub.id, bigger.id, day('2026-09-16'), cancelling)).rejects.toThrow(StaleTransition);
+    expect(await row(sub.id)).toMatchObject({ status: 'pending_cancellation', planId: sub.planId, creditCents: 0 });
   });
 });

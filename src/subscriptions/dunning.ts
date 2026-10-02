@@ -3,6 +3,7 @@ import type { Prisma } from '@/generated/prisma/client';
 import { enqueue } from '@/modules/notifications/outbox';
 import { type Charger, chargeInvoice, invoiceFor, mockCharger } from './billing-run';
 import { addDays, calendarDay, periodFrom } from './period';
+import { InvalidTransition } from './state';
 import { advancePeriod, setCard, StaleTransition, transition } from './transition';
 
 // P0-6: dunning. A past_due subscription owes the period starting at nextBillingDate; day 0 is its failed
@@ -57,12 +58,12 @@ async function retry(actor: Actor, sub: PastDue, asOf: Date, charge: Charger) {
         const cancels = iso(addDays(seq.day0, CANCEL_DAY));
         return void (await notify(sub, 'Payment failed again', `We could not charge your card. ${next ? `We will try again on ${iso(next)}. ` : ''}Your subscription cancels on ${cancels} unless payment goes through. Updating your payment method retries it now.`, t));
       }
-      await advancePeriod(t, sub.id, periodFrom(sub.billingAnchor, sub.plan.interval, key.periodStart), invoice);
+      await advancePeriod(t, sub.id, 'past_due', periodFrom(sub.billingAnchor, sub.plan.interval, key.periodStart), invoice);
       await transition(actor, sub.id, 'payment_recovered', asOf, t);
       await notify(sub, 'Payment received', 'Your payment went through. Your subscription is active again.', t);
     });
   } catch (e) {
-    if ((e as { code?: string }).code !== 'P2002' && !(e instanceof StaleTransition)) throw e;
+    if ((e as { code?: string }).code !== 'P2002' && !(e instanceof StaleTransition || e instanceof InvalidTransition)) throw e;
     return null;
   }
   return result.ok;
@@ -88,7 +89,7 @@ export async function runDunning(asOf: Date, charge: Charger = mockCharger) {
         });
         summary.cancelled++;
       } catch (e) {
-        if (!(e instanceof StaleTransition)) throw e;
+        if (!(e instanceof StaleTransition || e instanceof InvalidTransition)) throw e; // recovered or cancelled since the read
         summary.skipped++;
       }
       continue;

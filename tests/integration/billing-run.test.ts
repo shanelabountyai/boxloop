@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/core/db';
 import { type Charger, mockCharger, runBilling } from '@/subscriptions/billing-run';
 import { signup } from '@/subscriptions/signup';
+import { transition } from '@/subscriptions/transition';
 import { resetAuthTables } from '../helpers/auth';
 import { addMember, makeOrg } from '../helpers/org';
 
@@ -92,5 +93,22 @@ describe('runBilling', () => {
     const { calls, charge } = spy();
     expect(await runBilling(day('2026-02-14'), charge)).toEqual({ attempted: 0, succeeded: 0, failed: 0, skipped: 1 });
     expect(calls).toHaveLength(0);
+  });
+
+  it('a cancel landing while the charge is in flight is skipped, not converted or renewed, and the run goes on', async () => {
+    const trial = await subscribed(14); // converts 2026-02-14
+    const cancelling: Charger = async (i) => {
+      const s = await row(i.subscriptionId);
+      await transition({ orgId: s.orgId, userId: s.userId }, s.id, 'cancel', day('2026-02-14'));
+      return mockCharger(i);
+    };
+    expect(await runBilling(day('2026-02-14'), cancelling)).toEqual({ attempted: 0, succeeded: 0, failed: 0, skipped: 1 });
+    expect(await row(trial.id)).toMatchObject({ status: 'cancelled', nextBillingDate: day('2026-02-14') });
+
+    await resetAuthTables();
+    const paid = await subscribed(0); // paid Jan 31 – Feb 28
+    await runBilling(day('2026-01-31'));
+    expect(await runBilling(day('2026-02-28'), cancelling)).toMatchObject({ skipped: 1 });
+    expect(await row(paid.id)).toMatchObject({ status: 'pending_cancellation', currentPeriodEnd: day('2026-02-28'), nextBillingDate: day('2026-02-28') });
   });
 });

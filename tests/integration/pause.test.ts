@@ -95,4 +95,10 @@ describe('pause', () => {
     const { sub } = await subscribed('2026-01-15');
     await expect(db.$executeRaw`UPDATE "Subscription" SET status = 'paused' WHERE id = ${sub.id}::uuid`).rejects.toThrow('Subscription_paused_until');
   });
+
+  it('the unused paid days survive months of different lengths', async () => {
+    const { sub, actor } = await subscribed('2026-01-01'); // paid Jan 1 – Feb 1
+    const set = await pause(actor, sub.id, 1, day('2026-01-20')); // 12 days unused
+    expect([set.pausedUntil, set.currentPeriodEnd].map(iso)).toEqual(['2026-02-17', '2026-03-01']); // Feb 17 – Mar 1: still 12
+  });
 });

@@ -48,14 +48,15 @@ export async function transition(
 /**
  * Moves a paid subscription into `period`, the one it was just charged for (P0-4): the only other write to
  * the row, kept in this file so every Subscription write stays here (D-004). Writes only if
- * `nextBillingDate` is still `period.start`, so a racing run cannot advance the same period twice.
+ * `nextBillingDate` is still `period.start` and the status is still `status`, so a racing run cannot advance the same
+ * period twice and a racing cancel, pause or recovery cannot be renewed over.
  * The invoice's credit (P0-5) comes off the balance and its coupon (P1-2) loses a period in the same write, which
  * also records the discount the new period was paid at; a coupon changed since the invoice was priced stops it.
  */
-export async function advancePeriod(t: Tx, subscriptionId: string, period: { start: Date; end: Date }, invoice = { creditAppliedCents: 0, discountBps: 0 }) {
+export async function advancePeriod(t: Tx, subscriptionId: string, status: SubscriptionStatus, period: { start: Date; end: Date }, invoice = { creditAppliedCents: 0, discountBps: 0 }) {
   const coupon = invoice.discountBps > 0;
   const { count } = await t.subscription.updateMany({
-    where: { id: subscriptionId, nextBillingDate: period.start, creditCents: { gte: invoice.creditAppliedCents }, ...(coupon && { couponOffBps: invoice.discountBps, couponPeriodsLeft: { gte: 1 } }) },
+    where: { id: subscriptionId, status, nextBillingDate: period.start, creditCents: { gte: invoice.creditAppliedCents }, ...(coupon && { couponOffBps: invoice.discountBps, couponPeriodsLeft: { gte: 1 } }) },
     data: {
       currentPeriodStart: period.start,
       currentPeriodEnd: period.end,
@@ -94,12 +95,12 @@ export async function applyCoupon(actor: { orgId: string; userId: string | null 
 
 /**
  * Points the subscription at another plan and adds a downgrade's credit (P0-5), audited with the PlanChange
- * row's id. Writes only if the plan and paid period are still the ones the proration was computed from.
+ * row's id. Writes only if the status, plan and paid period are still the ones the proration was computed from.
  */
 export async function switchPlan(
   actor: { orgId: string; userId: string | null },
   t: Tx,
-  read: { id: string; planId: string; currentPeriodStart: Date },
+  read: { id: string; status: SubscriptionStatus; planId: string; currentPeriodStart: Date },
   toPlanId: string,
   creditCents: number,
   planChangeId: string,
