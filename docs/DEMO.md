@@ -2,7 +2,7 @@
 
 About 10 minutes. BoxLoop is subscription billing: plans, trials, proration, dunning, and a billing run you can re-run without double-charging. Everything runs locally against a mock card provider. Nothing is deployed.
 
-Every command below was run once on 2026-10-02 (306/306 tests, typecheck clean). Output numbers are the real ones.
+Every command below was run once on 2026-10-02 (321/321 tests, typecheck clean). Output numbers are the real ones.
 
 ## Before you start
 
@@ -72,7 +72,7 @@ This run leaves charges in the local database. `npm run simulate` wipes and rese
 npm test
 ```
 
-About 30 seconds, 43 files, 306 tests. Point to three files:
+About 30 seconds, 43 files, 321 tests. Point to three files:
 
 - `tests/integration/billing-run.test.ts`: idempotency, including racing runs.
 - `tests/integration/plan-change.test.ts`: proration checked against hand-calculated cents.
