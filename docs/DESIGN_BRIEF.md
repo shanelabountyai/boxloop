@@ -43,7 +43,9 @@ The member is a `member` of the operator's org; the operator is its `owner` or `
    - **Cancel** must show the paid-through date before confirming: "You keep access until Nov 14. Nothing more will be
      charged. You can undo this until then." A trial cancels at once ("Your trial ends now, nothing was charged").
 2. **Plan picker at signup.** Active plans as cards: name, price per interval, trial length ("14 days free, then
-   $30.00/month"). Archived plans never appear here. The confirmation states the first charge date and amount.
+   $30.00/month"). Archived plans never appear here. The confirmation states the first charge date and amount. A plan
+   with no trial is charged at signup (D-015): "You'll be charged $30.00 today", and a decline creates nothing and
+   shows the error inline, so the member can try another card.
 3. **Operator subscribers list (`/o/[org]/subscribers`).** One row per subscription: member, plan, status pill,
    next event and its date. Filterable by status. A **past-due** section sits on top with the retry number and the
    next retry date, and the day it cancels if nothing changes, because that is where the operator acts.
@@ -59,6 +61,8 @@ The member is a `member` of the operator's org; the operator is its `owner` or `
    template-owned and **cannot be edited**. They must look right through global styles alone. Note that
    `/o/[org]/settings/billing` is the template's own SaaS billing page, not BoxLoop's member billing; it must not be
    confused with screen 1.
+8. **Metrics (`/o/[org]/metrics`).** Built (P1) and unstyled: MRR, churn and trial conversion over the run, as
+   numbers plus a chart. Style it with the chart palette from the tokens; no new chart types.
 
 ## States that must be designed, not left to chance
 
@@ -74,7 +78,9 @@ The member is a `member` of the operator's org; the operator is its `owner` or `
 - **Role:** member versus operator. An operator sees subscriptions read-only; a member never sees another member.
 - **Empty states:** no plans yet, no subscribers, no charges yet (trialing), no past-due members.
 - **Errors from actions:** `ActionForm` renders a server error inline under the form ("cannot pause a trialing
-  subscription", "a pause is 1 to 3 billing periods"). Style it, and suggest friendlier wording.
+  subscription", "a pause is 1 to 3 billing periods"). Style it, and suggest friendlier wording. One needs it most:
+  on the billing day, before the daily run, plan change and pause are refused as "outside the paid period" (D-020);
+  the member should read something like "Your renewal is being processed today. Try again tomorrow."
 - **404:** another org's subscription is a 404 on purpose (tenant isolation). It should look like a normal not-found.
 
 ## Hard constraints for the implementation
@@ -96,14 +102,14 @@ The member is a `member` of the operator's org; the operator is its `owner` or `
 ## Out of scope (cut on purpose)
 
 Do not design card entry (the mock provider has an "approves/declines" switch, shown as a plain toggle in the demo),
-refunds, coupons, taxes, multi-currency, shipping, or marketing pages. The P1 metrics dashboard (MRR, churn,
-trial conversion) is a later pass; tokens should leave room for one chart palette, nothing more.
+refunds, coupons (they exist, but are applied from the CLI only), taxes, multi-currency, shipping, or marketing pages. The metrics page is screen 8;
+tokens need one chart palette for it, nothing more.
 
 ## What I want back from Claude Design
 
 1. A token sheet: colour (one per status family: trial, good standing, at risk, on hold, ending, ended), type scale,
    spacing, radius, shadow.
-2. Mockups of screens 0–4 at mobile and desktop width, plus the home page.
+2. Mockups of screens 0–4 at mobile and desktop width, plus the home page and the metrics page.
 3. The member subscription card as a component with every status variant on one board, each with its dates line
    and actions.
 4. The three confirm dialogs (change plan, pause, cancel) with their money/date previews.

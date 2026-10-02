@@ -1,6 +1,8 @@
 # NEXT
 
-## ▶ Next session here: nothing queued. Project is closed and reviewed.
+## ▶ Next session here: implement the Claude Design output for `docs/DESIGN_BRIEF.md`.
+
+Brief refreshed 2026-10-02 (D-015 charge at signup, D-020 billing-day refusal, metrics page as screen 8). Shane pastes the whole brief into Claude Design; the next session implements what comes back, following the brief's last section (globals.css first, then header/home, member page, operator pages; foundation:drift, e2e, 360/1280 screenshots in both themes). Model: Sonnet for the CSS/page wiring; the member page's confirm previews call billing functions, so check those against D-015/D-020.
 
 Done 2026-10-02: the demo can now reach the sim's dashboard. `simulate` makes seed:demo's owner@acme an admin of `sim` after each reseed, so `/o/sim/metrics` charts the 180-day run (DEMO.md screen 5 step 4). No new isDemo user, so INV-27's "only seed-demo sets isDemo" still holds. Checked in the real app.
 
