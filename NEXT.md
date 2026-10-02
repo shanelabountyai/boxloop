@@ -4,7 +4,7 @@
 - `ponytail-audit` (Sonnet).
 - Feature candidate: an operator login for the `sim` org so the metrics page has data in the demo.
 
-Done 2026-10-02: testing-strategy pass. Added 7 tests (lost-write replay, provider throw, yearly renewal + pause, billing-day refusal, late card fix, every-anchor period sweep). Found and fixed: a declined upgrade's key replayed the decline forever, so the mock now replays keys like a real provider (D-018). Locked current behaviour as D-019 (yearly pause = years), D-020 (billing day before the run refuses plan change/pause), D-021 (card fixed after day 10 still recovers). Suite 296/296.
+Done 2026-10-02: testing-strategy pass. Added 7 tests (lost-write replay, provider throw, yearly renewal + pause, billing-day refusal, late card fix, every-anchor period sweep). Found and fixed: a declined upgrade's key replayed the decline forever, so the mock now replays keys like a real provider (D-018). Locked current behaviour as D-019 (yearly pause = years), D-020 (billing day before the run refuses plan change/pause), D-021 (card fixed after day 10 still recovers). Full suite 321/321 (43 files), EXIT=0.
 
 Done 2026-10-02: security review (org scoping). No exploitable issue: org pages and actions all go through `requireOrg` + `inOrg`; subscription writers are reachable only from CLI scripts and scope by `actor.orgId`. Hardened with a composite FK so a subscription's plan must be in its own org (D-017, migration `20261002100000_plan_same_org`, test in `tests/integration/plans.test.ts`). Template-owned paths (auth, webhook, share links) were not reviewed here.
 
