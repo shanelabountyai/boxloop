@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { periodFrom, shift, signupTerms } from '@/subscriptions/period';
+import { addDays, periodFrom, periodIndex, shift, signupTerms } from '@/subscriptions/period';
 
 // P0-3: anchored billing periods and trial conversion dates.
 const d = (iso: string) => new Date(`${iso}T00:00:00Z`);
@@ -45,6 +45,26 @@ describe('periodFrom', () => {
     expect(() => periodFrom(d('2026-01-31'), 'month', d('2026-02-27'))).toThrow(/not a billing date/);
     expect(() => periodFrom(d('2026-01-31'), 'year', d('2026-02-28'))).toThrow(/not a billing date/);
     expect(() => periodFrom(d('2026-03-31'), 'month', d('2026-02-28'))).toThrow(/not a billing date/);
+  });
+});
+
+describe('every anchor, 2024–2028', () => {
+  it('chains periods with no gap or overlap, finds each by index, and keeps the anchor day where the month has it', () => {
+    const bad: string[] = [];
+    for (let anchor = d('2024-01-01'); anchor <= d('2028-12-31'); anchor = addDays(anchor, 1)) {
+      for (const [interval, count] of [['month', 60], ['year', 8]] as const) {
+        let start = anchor;
+        for (let n = 1; n <= count; n++) {
+          const { end } = periodFrom(anchor, interval, start); // throws if `start` is off the anchor's schedule
+          const lastDay = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() + 1, 0)).getUTCDate();
+          if (end <= start || periodIndex(anchor, interval, end) !== n || end.getUTCDate() !== Math.min(anchor.getUTCDate(), lastDay)) {
+            bad.push(`${iso(anchor)} ${interval} #${n}: ${iso(start)} → ${iso(end)}`);
+          }
+          start = end;
+        }
+      }
+    }
+    expect(bad).toEqual([]);
   });
 });
 

@@ -91,6 +91,16 @@ describe('pause', () => {
     expect(await db.auditEvent.count({ where: { targetId: sub.id, action: 'subscription.pause' } })).toBe(1);
   });
 
+  it('on a yearly plan one period is a year (D-019)', async () => {
+    const org = await makeOrg('acme');
+    const member = await addMember(org.id, 'member', 'm@acme.test');
+    const actor = { orgId: org.id, userId: member.id };
+    const plan = await db.plan.create({ data: { orgId: org.id, name: 'Year', priceCents: 30000, interval: 'year', trialDays: 0 } });
+    const sub = await signup(actor, plan.id, day('2026-01-15')); // paid to 2027-01-15
+    const set = await pause(actor, sub.id, 1, day('2026-12-15')); // 31 days unused
+    expect([set.pausedUntil, set.nextBillingDate].map(iso)).toEqual(['2027-12-15', '2028-01-15']);
+  });
+
   it('the database refuses a paused row without an end date', async () => {
     const { sub } = await subscribed('2026-01-15');
     await expect(db.$executeRaw`UPDATE "Subscription" SET status = 'paused' WHERE id = ${sub.id}::uuid`).rejects.toThrow('Subscription_paused_until');

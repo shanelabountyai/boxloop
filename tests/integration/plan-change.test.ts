@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/core/db';
 import { type Charger, runBilling } from '@/subscriptions/billing-run';
+import { updateCard } from '@/subscriptions/dunning';
+import { pause } from '@/subscriptions/pause';
 import { changePlan, PlanChangeDeclined } from '@/subscriptions/plan-change';
 import { signup } from '@/subscriptions/signup';
 import { StaleTransition, transition } from '@/subscriptions/transition';
@@ -47,7 +49,7 @@ describe('changePlan', () => {
     const change = await changePlan(actor, sub.id, premium.id, day('2026-09-16'), charge);
 
     expect(amounts).toEqual([1500]);
-    expect(change).toMatchObject({ creditCents: -1500, chargeCents: 3000, netCents: 1500, remainingDays: 15, periodDays: 30, providerRef: `ref_${sub.id}:plan:1` });
+    expect(change).toMatchObject({ creditCents: -1500, chargeCents: 3000, netCents: 1500, remainingDays: 15, periodDays: 30, providerRef: `ref_${sub.id}:plan:1:0` });
     expect(await row(sub.id)).toMatchObject({ planId: premium.id, creditCents: 0 });
     expect(await db.auditEvent.count({ where: { action: 'subscription.plan_changed', targetId: sub.id } })).toBe(1);
 
@@ -85,6 +87,24 @@ describe('changePlan', () => {
     await expect(changePlan(actor, sub.id, (await plan(6000)).id, day('2026-09-16'), declined)).rejects.toThrow(PlanChangeDeclined);
     expect((await row(sub.id)).planId).toBe(sub.planId);
     expect(await db.planChange.count()).toBe(0);
+  });
+
+  it('after a declined upgrade, a fixed card can upgrade: the retry is a new charge, not a replay of the decline', async () => {
+    const { sub, plan, actor } = await paidSince0901(3000);
+    const to = (await plan(6000)).id;
+    await updateCard(actor, sub.id, 'declines', day('2026-09-16'));
+    await expect(changePlan(actor, sub.id, to, day('2026-09-16'))).rejects.toThrow(PlanChangeDeclined);
+    await updateCard(actor, sub.id, 'approves', day('2026-09-16'));
+    expect(await changePlan(actor, sub.id, to, day('2026-09-16'))).toMatchObject({ seq: 1, netCents: 1500 });
+  });
+
+  it('on the billing day the period has ended: plan changes and pauses wait for the run to renew it (D-020)', async () => {
+    const { sub, plan, actor } = await paidSince0901(3000); // paid Sep 1 – Oct 1
+    const to = (await plan(6000)).id;
+    await expect(changePlan(actor, sub.id, to, day('2026-10-01'))).rejects.toThrow(/outside the paid period/);
+    await expect(pause(actor, sub.id, 1, day('2026-10-01'))).rejects.toThrow(/inside a paid period/);
+    await runBilling(day('2026-10-01'));
+    expect(await changePlan(actor, sub.id, to, day('2026-10-01'))).toMatchObject({ remainingDays: 31, netCents: 3000 });
   });
 
   it('a trial switches plan without moving money', async () => {

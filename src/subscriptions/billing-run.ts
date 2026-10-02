@@ -16,10 +16,20 @@ export type ChargeResult = { ok: true; ref: string } | { ok: false; reason: stri
 /** Charges a member. Must replay its first result for a repeated `idempotencyKey`, as Stripe does. */
 export type Charger = (i: { subscriptionId: string; amountCents: number; idempotencyKey: string }) => Promise<ChargeResult>;
 
-/** The mock provider: approves unless the subscription's mock card is set to decline (P0-6). A signup's first charge comes before the row, on a new card that approves. */
+// ponytail: the mock's key memory lives in this process, so a restarted CLI forgets it; a real provider keeps it for days.
+const replays = new Map<string, ChargeResult>();
+
+/**
+ * The mock provider: approves unless the subscription's mock card is set to decline (P0-6), and replays its first
+ * answer for a repeated key whatever the card says now. A signup's first charge comes before the row, on a new card that approves.
+ */
 export const mockCharger: Charger = async (i) => {
+  const seen = replays.get(i.idempotencyKey);
+  if (seen) return seen;
   const s = await db.subscription.findUnique({ where: { id: i.subscriptionId }, select: { card: true } });
-  return !s || s.card === 'approves' ? { ok: true, ref: `mock_${i.idempotencyKey}` } : { ok: false, reason: 'card_declined' };
+  const result: ChargeResult = !s || s.card === 'approves' ? { ok: true, ref: `mock_${i.idempotencyKey}` } : { ok: false, reason: 'card_declined' };
+  replays.set(i.idempotencyKey, result);
+  return result;
 };
 
 const iso = (day: Date) => day.toISOString().slice(0, 10);
@@ -81,6 +91,7 @@ export async function runBilling(asOf: Date, charge: Charger = mockCharger) {
   });
   const summary = { attempted: 0, succeeded: 0, failed: 0, skipped: 0 };
   // ponytail: one period per subscription per run, and an unexpected error stops the run; a rerun resumes, idempotently.
+  // A subscription whose charge keeps throwing therefore holds up every id after it: catch per row if that bites.
   for (const sub of due) {
     const key = { subscriptionId: sub.id, periodStart: sub.nextBillingDate, attempt: 1 };
     if (await db.chargeAttempt.findUnique({ where: { subscriptionId_periodStart_attempt: key } })) {

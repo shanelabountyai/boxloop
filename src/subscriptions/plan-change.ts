@@ -1,3 +1,4 @@
+import { audit } from '@/core/audit';
 import { db } from '@/core/db';
 import { type Charger, mockCharger } from './billing-run';
 import { percentOfCents, prorateCents } from './money';
@@ -26,7 +27,8 @@ export function prorationLines(fromCents: number, toCents: number, period: { sta
 /**
  * Moves a trialing or active subscription to `toPlanId` on `asOf` (D-003). A trial has paid nothing, so it
  * just switches. An active one is prorated over its current period; a positive net is charged first, with
- * the key `subId:plan:seq`, and only then recorded (D-004), so a declined card changes nothing.
+ * the key `subId:plan:seq:declines`, and only then recorded (D-004), so a declined card changes nothing but an
+ * audited decline, which moves the next try to a new key (D-018).
  */
 export async function changePlan(actor: { orgId: string; userId: string | null }, subscriptionId: string, toPlanId: string, asOf: Date, charge: Charger = mockCharger) {
   const day = calendarDay(asOf);
@@ -48,9 +50,13 @@ export async function changePlan(actor: { orgId: string; userId: string | null }
   const seq = sub._count.planChanges + 1;
   let providerRef: string | null = null;
   if (lines.netCents > 0) {
-    // ponytail: the key is per change number, so a retry after a crash replays; a provider that checks amounts would reject a retry to a different plan.
-    const result = await charge({ subscriptionId, amountCents: lines.netCents, idempotencyKey: `${subscriptionId}:plan:${seq}` });
-    if (!result.ok) throw new PlanChangeDeclined(result.reason);
+    const declines = await db.auditEvent.count({ where: { action: 'plan_change.declined', targetId: subscriptionId } });
+    // ponytail: the key is per change number and decline, so a retry after a crash replays; a provider that checks amounts would reject a retry to a different plan.
+    const result = await charge({ subscriptionId, amountCents: lines.netCents, idempotencyKey: `${subscriptionId}:plan:${seq}:${declines}` });
+    if (!result.ok) {
+      await audit(actor, 'plan_change.declined', { targetType: 'subscription', targetId: subscriptionId, data: { toPlanId, reason: result.reason, on: day.toISOString().slice(0, 10) } });
+      throw new PlanChangeDeclined(result.reason);
+    }
     providerRef = result.ref;
   }
   try {

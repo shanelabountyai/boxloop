@@ -104,6 +104,13 @@ describe('updateCard', () => {
     expect(await attempts(sub.id)).toHaveLength(3);
   });
 
+  it('a card fixed after the cancel day, before any run has cancelled, still recovers (D-021)', async () => {
+    const { sub, actor } = await failedOn0214(); // cancel day 2026-02-24; no dunning run since
+    expect(await updateCard(actor, sub.id, 'approves', day('2026-02-26'))).toBe(true);
+    expect(await row(sub.id)).toMatchObject({ status: 'active', nextBillingDate: day('2026-03-14') });
+    expect(await runDunning(day('2026-02-26'))).toEqual({ retried: 0, recovered: 0, cancelled: 0, skipped: 0 });
+  });
+
   it('does not retry a subscription that is not past_due, nor touch another org\'s', async () => {
     const { sub, actor } = await failedOn0214();
     await expect(updateCard({ orgId: (await makeOrg('other')).id, userId: null }, sub.id, 'approves', day('2026-02-15'))).rejects.toThrow('not found');

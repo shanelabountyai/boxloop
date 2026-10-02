@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/core/db';
 import { type Charger, mockCharger, runBilling } from '@/subscriptions/billing-run';
+import { updateCard } from '@/subscriptions/dunning';
 import { signup } from '@/subscriptions/signup';
 import { transition } from '@/subscriptions/transition';
 import { resetAuthTables } from '../helpers/auth';
@@ -12,9 +13,9 @@ beforeEach(resetAuthTables);
 const day = (iso: string) => new Date(`${iso}T00:00:00Z`);
 const iso = (date: Date) => date.toISOString().slice(0, 10);
 
-async function subscribed(trialDays: number, on = '2026-01-31') {
-  const org = await makeOrg('acme');
-  const member = await addMember(org.id, 'member', 'm@acme.test');
+async function subscribed(trialDays: number, on = '2026-01-31', slug = 'acme') {
+  const org = await makeOrg(slug);
+  const member = await addMember(org.id, 'member', `m@${slug}.test`);
   const plan = await db.plan.create({ data: { orgId: org.id, name: 'Box', priceCents: 3000, interval: 'month', trialDays } });
   return signup({ orgId: org.id, userId: member.id }, plan.id, day(on));
 }
@@ -56,6 +57,21 @@ describe('runBilling', () => {
     expect(await db.chargeAttempt.count()).toBe(2);
   });
 
+  it('a yearly plan renews on its anchor, Feb 29 falling to Feb 28 and back', async () => {
+    const org = await makeOrg('acme');
+    const member = await addMember(org.id, 'member', 'm@acme.test');
+    const plan = await db.plan.create({ data: { orgId: org.id, name: 'Year', priceCents: 30000, interval: 'year', trialDays: 0 } });
+    const sub = await signup({ orgId: org.id, userId: member.id }, plan.id, day('2028-02-29'));
+    const billed: string[] = [];
+    for (const on of ['2029-02-28', '2030-02-28', '2031-02-28', '2032-02-28', '2032-02-29']) {
+      const r = await runBilling(day(on));
+      if (r.succeeded) billed.push(on);
+    }
+    expect(billed).toEqual(['2029-02-28', '2030-02-28', '2031-02-28', '2032-02-29']);
+    expect(iso((await row(sub.id)).nextBillingDate)).toBe('2033-02-28');
+    expect(await db.chargeAttempt.aggregate({ _sum: { amountCents: true } })).toEqual({ _sum: { amountCents: 150000 } }); // signup + 4 renewals
+  });
+
   it('a declined charge records the failure and moves the subscription to past_due, period unpaid', async () => {
     const sub = await subscribed(14);
     const declined: Charger = async () => ({ ok: false, reason: 'card_declined' });
@@ -93,6 +109,34 @@ describe('runBilling', () => {
     const { calls, charge } = spy();
     expect(await runBilling(day('2026-02-14'), charge)).toEqual({ attempted: 0, succeeded: 0, failed: 0, skipped: 1 });
     expect(calls).toHaveLength(0);
+  });
+
+  it('a charge whose record is lost replays on the rerun, even after the card has changed (D-004)', async () => {
+    const sub = await subscribed(14); // converts 2026-02-14
+    const real = db.$transaction; // vi.spyOn's restore drops the client's own $transaction
+    db.$transaction = (() => Promise.reject(new Error('connection reset'))) as typeof real;
+    await expect(runBilling(day('2026-02-14'))).rejects.toThrow('connection reset').finally(() => (db.$transaction = real));
+    expect(await db.chargeAttempt.count()).toBe(0);
+
+    await updateCard({ orgId: sub.orgId, userId: sub.userId }, sub.id, 'declines', day('2026-02-14'));
+    const { calls, charge } = spy();
+    expect(await runBilling(day('2026-02-14'), charge)).toEqual({ attempted: 1, succeeded: 1, failed: 0, skipped: 0 });
+    expect(calls.map((c) => c.idempotencyKey)).toEqual([`${sub.id}:2026-02-14:1`]);
+    expect(await row(sub.id)).toMatchObject({ status: 'active', nextBillingDate: day('2026-03-14') });
+  });
+
+  it('a provider error stops the run where it is; the rerun charges the rest under the same keys', async () => {
+    const subs = [await subscribed(14), await subscribed(14, '2026-01-31', 'b'), await subscribed(14, '2026-01-31', 'c')].sort((a, b) => a.id.localeCompare(b.id));
+    const flaky: Charger = async (i) => {
+      if (i.subscriptionId === subs[1]!.id) throw new Error('provider timeout');
+      return mockCharger(i);
+    };
+    await expect(runBilling(day('2026-02-14'), flaky)).rejects.toThrow('provider timeout');
+    expect((await db.chargeAttempt.findMany()).map((a) => a.subscriptionId)).toEqual([subs[0]!.id]);
+
+    const { calls, charge } = spy();
+    expect(await runBilling(day('2026-02-14'), charge)).toEqual({ attempted: 2, succeeded: 2, failed: 0, skipped: 0 });
+    expect(calls.map((c) => c.idempotencyKey)).toEqual([`${subs[1]!.id}:2026-02-14:1`, `${subs[2]!.id}:2026-02-14:1`]);
   });
 
   it('a cancel landing while the charge is in flight is skipped, not converted or renewed, and the run goes on', async () => {
