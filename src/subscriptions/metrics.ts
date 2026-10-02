@@ -1,4 +1,6 @@
 import { db } from '@/core/db';
+import { ratioBps } from './money';
+import { iso } from './period';
 
 // P1-1: business metrics derived from the `subscription.*` audit stream, not from the current rows (D-010). Each event
 // carries its business day `on` and the state it moved to; `created` also names the plan, `plan_changed` the new one.
@@ -64,8 +66,7 @@ export function replay(events: SubEvent[], plans: Map<string, Plan>, dates: stri
 /** Converted trials as basis points of trials that have ended either way, rounded half-up. */
 export const trialConversionBps = (rows: MetricsRow[]) => {
   const won = rows.reduce((n, r) => n + r.trialsConverted, 0);
-  const ended = won + rows.reduce((n, r) => n + r.trialsLost, 0);
-  return ended ? Math.floor((won * 20_000 + ended) / (2 * ended)) : 0;
+  return ratioBps(won, won + rows.reduce((n, r) => n + r.trialsLost, 0));
 };
 
 /** The org's metrics on each of `dates` (YYYY-MM-DD, ascending), read from its audit stream. */
@@ -83,7 +84,7 @@ export async function monthlyMetrics(orgId: string, through: string) {
   if (!first) return [];
   const dates: string[] = [];
   for (let [y, m] = (first.data as SubEvent['data']).on.split('-').map(Number) as [number, number]; ; m++) {
-    const end = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10); // day 0 of the next month
+    const end = iso(new Date(Date.UTC(y, m, 0))); // day 0 of the next month
     if (end >= through) break;
     dates.push(end);
   }

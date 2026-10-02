@@ -15,6 +15,12 @@ export function formatCents(cents: number): string {
   return `${cents < 0 ? '-' : ''}$${dollars}.${String(abs % 100).padStart(2, '0')}`;
 }
 
+/** `n / d` in basis points, rounded half-up; 0 when `d` is 0. */
+export const ratioBps = (n: number, d: number) => (d ? Math.floor((n * 20_000 + d) / (2 * d)) : 0);
+
+/** 1234 bps → "12.34%". */
+export const formatBps = (bps: number) => `${Math.trunc(bps / 100)}.${String(bps % 100).padStart(2, '0')}%`;
+
 /** `bps` basis points of `amountCents`, rounded half-up: a coupon's discount (P1-2). */
 export const percentOfCents = (amountCents: number, bps: number) => prorateCents(amountCents, bps, 10_000);
 

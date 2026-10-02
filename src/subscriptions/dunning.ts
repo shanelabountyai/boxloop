@@ -2,21 +2,19 @@ import { db } from '@/core/db';
 import type { Prisma } from '@/generated/prisma/client';
 import { enqueue } from '@/modules/notifications/outbox';
 import { type Charger, chargeInvoice, invoiceFor, mockCharger } from './billing-run';
-import { addDays, calendarDay, periodFrom } from './period';
-import { InvalidTransition } from './state';
-import { advancePeriod, setCard, StaleTransition, transition } from './transition';
+import { addDays, calendarDay, iso, periodFrom } from './period';
+import { advancePeriod, lostRace, setCard, transition } from './transition';
 
 // P0-6: dunning. A past_due subscription owes the period starting at nextBillingDate; day 0 is its failed
 // attempt 1 (the billing run). Retries fall on days 1, 3 and 7, each notifies the member through the
 // outbox, and day 10 cancels it as `dunning_exhausted`, kept apart from a voluntary `cancel` (D-005).
 
-export const RETRY_DAYS = [1, 3, 7];
-export const CANCEL_DAY = 10;
+const RETRY_DAYS = [1, 3, 7];
+const CANCEL_DAY = 10;
 
 type Actor = { orgId: string; userId: string | null };
 type PastDue = Prisma.SubscriptionGetPayload<{ include: { plan: true; user: true; chargeAttempts: true } }>;
 
-const iso = (day: Date) => day.toISOString().slice(0, 10);
 const loadPastDue = (where: Prisma.SubscriptionWhereInput) =>
   db.subscription.findMany({
     where: { ...where, status: 'past_due' },
@@ -39,9 +37,7 @@ const notify = (sub: PastDue, subject: string, body: string, t: Prisma.Transacti
  * Success advances the period and returns the subscription to active in the same transaction. Returns
  * null when another writer got there first (the attempt number was taken, or the subscription moved).
  */
-async function retry(actor: Actor, sub: PastDue, asOf: Date, charge: Charger) {
-  const seq = sequence(sub);
-  if (!seq) return null;
+async function retry(actor: Actor, sub: PastDue, seq: NonNullable<ReturnType<typeof sequence>>, asOf: Date, charge: Charger) {
   const attempt = seq.attempts.at(-1)!.attempt + 1;
   const key = { subscriptionId: sub.id, periodStart: sub.nextBillingDate, attempt };
   const invoice = invoiceFor(sub);
@@ -63,7 +59,7 @@ async function retry(actor: Actor, sub: PastDue, asOf: Date, charge: Charger) {
       await notify(sub, 'Payment received', 'Your payment went through. Your subscription is active again.', t);
     });
   } catch (e) {
-    if ((e as { code?: string }).code !== 'P2002' && !(e instanceof StaleTransition || e instanceof InvalidTransition)) throw e;
+    if (!lostRace(e)) throw e;
     return null;
   }
   return result.ok;
@@ -89,7 +85,7 @@ export async function runDunning(asOf: Date, charge: Charger = mockCharger) {
         });
         summary.cancelled++;
       } catch (e) {
-        if (!(e instanceof StaleTransition || e instanceof InvalidTransition)) throw e; // recovered or cancelled since the read
+        if (!lostRace(e)) throw e; // recovered or cancelled since the read
         summary.skipped++;
       }
       continue;
@@ -97,7 +93,7 @@ export async function runDunning(asOf: Date, charge: Charger = mockCharger) {
     const lastAttemptOn = seq.attempts.at(-1)!.attemptedOn;
     const due = RETRY_DAYS.map((d) => addDays(seq.day0, d)).filter((d) => d <= day).at(-1);
     if (!due || lastAttemptOn >= due) continue; // nothing scheduled yet, or an attempt (maybe a member's) already covered it
-    const ok = await retry(system, sub, day, charge);
+    const ok = await retry(system, sub, seq, day, charge);
     if (ok === null) summary.skipped++;
     else {
       summary.retried++;
@@ -114,5 +110,6 @@ export async function runDunning(asOf: Date, charge: Charger = mockCharger) {
 export async function updateCard(actor: Actor, subscriptionId: string, card: 'approves' | 'declines', asOf: Date, charge: Charger = mockCharger) {
   await db.$transaction((t) => setCard(actor, subscriptionId, card, calendarDay(asOf), t));
   const [sub] = await loadPastDue({ id: subscriptionId, orgId: actor.orgId });
-  return sub ? retry(actor, sub, calendarDay(asOf), charge) : null;
+  const seq = sub && sequence(sub);
+  return seq ? retry(actor, sub, seq, calendarDay(asOf), charge) : null;
 }

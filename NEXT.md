@@ -1,10 +1,9 @@
 # NEXT
 
 ## ▶ Next session here: optional only. Project is closed and reviewed. Pick one or stop.
-- Apply the ponytail-audit shrinks below (Sonnet). About -15 lines, no behaviour change.
 - Feature candidate: an operator login for the `sim` org so the metrics page has data in the demo.
 
-Done 2026-10-02: ponytail-audit (report only, nothing applied). The project's own code (~1.3k lines) is lean, with no dependencies to cut. Shrinks:
+Done 2026-10-02: ponytail-audit, applied in the next commit except plan-change.ts's P2002 catch, which rethrows as StaleTransition rather than skipping, so it stays. Net line count is about even: the new helpers carry doc comments. Suite 321/321. The project's own code (~1.3k lines) is lean, with no dependencies to cut. Shrinks:
 1. Lost-race catch `code !== 'P2002' && !(StaleTransition || InvalidTransition)` is repeated in billing-run.ts and dunning.ts (x2). Make it one `lostRace(e)` in transition.ts.
 2. `iso` is defined 3 times (billing-run, dunning, simulate) and `.toISOString().slice(0, 10)` is inlined about 10 more. Export one `iso` from period.ts.
 3. `DAY_MS` is redefined in pause.ts and plan-change.ts. Export `daysBetween(a, b)` from period.ts.

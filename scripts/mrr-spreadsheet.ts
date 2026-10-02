@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { db } from '@/core/db';
 import { metricsOn } from '@/subscriptions/metrics';
+import { iso } from '@/subscriptions/period';
 import { SIM_ORG } from '@/subscriptions/simulate';
 
 // `npm run mrr:check` after `npm run simulate`: the PRD's "MRR matches an independent spreadsheet" metric (D-013).
@@ -24,7 +25,7 @@ try {
   const last = events.reduce((m, e) => (e.data.on > m ? e.data.on : m), '');
   const dates: string[] = [];
   for (let [y, m] = events.reduce((f, e) => (e.data.on < f ? e.data.on : f), last).split('-').map(Number) as [number, number]; ; m++) {
-    dates.push(new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10)); // day 0 of the next month
+    dates.push(iso(new Date(Date.UTC(y, m, 0)))); // day 0 of the next month
     if (dates.at(-1)! >= last) break;
   }
 

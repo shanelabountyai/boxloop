@@ -1,7 +1,7 @@
 // P0-3: the billing cycle. Dates are calendar days: UTC-midnight Dates, Postgres `date`. Pure: the caller
 // passes the date in, never reads a clock here (D-003).
 
-export type Interval = 'month' | 'year';
+type Interval = 'month' | 'year';
 
 const DAY_MS = 86_400_000;
 
@@ -9,6 +9,12 @@ const DAY_MS = 86_400_000;
 export const calendarDay = (at: Date) => new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate()));
 
 export const addDays = (day: Date, n: number) => new Date(day.getTime() + n * DAY_MS);
+
+/** Whole calendar days from `from` to `to`. */
+export const daysBetween = (from: Date, to: Date) => (to.getTime() - from.getTime()) / DAY_MS;
+
+/** A calendar day as YYYY-MM-DD. */
+export const iso = (day: Date) => day.toISOString().slice(0, 10);
 
 /**
  * `anchor` moved `n` intervals on, its day clamped to the target month's length (Jan 31 → Feb 28 → Mar 31).
@@ -26,7 +32,7 @@ export function periodIndex(anchor: Date, interval: Interval, day: Date): number
   const months = (day.getUTCFullYear() - anchor.getUTCFullYear()) * 12 + day.getUTCMonth() - anchor.getUTCMonth();
   const n = interval === 'year' ? months / 12 : months;
   if (!Number.isInteger(n) || n < 0 || shift(anchor, n, interval).getTime() !== day.getTime()) {
-    throw new Error(`${day.toISOString().slice(0, 10)} is not a billing date for anchor ${anchor.toISOString().slice(0, 10)}`);
+    throw new Error(`${iso(day)} is not a billing date for anchor ${iso(anchor)}`);
   }
   return n;
 }

@@ -4,9 +4,9 @@ import { type Charger, mockCharger, runBilling } from './billing-run';
 import { undoCancel } from './cancel';
 import { runDunning, updateCard } from './dunning';
 import { type MetricsRow, metricsOn, monthlyCents, MRR_STATUSES, trialConversionBps } from './metrics';
-import { formatCents } from './money';
+import { formatBps, formatCents, ratioBps } from './money';
 import { pause } from './pause';
-import { addDays, calendarDay } from './period';
+import { addDays, calendarDay, iso } from './period';
 import { changePlan } from './plan-change';
 import { signup } from './signup';
 import { transition } from './transition';
@@ -57,7 +57,6 @@ const COHORTS: { label: string; plan: (i: number) => PlanKey; act?: (m: Member, 
 const SOFT_DECLINE_COHORT = 6;
 
 const on = (m: Member, c: Ctx, offset: number) => +c.day === +addDays(m.signupDay, offset);
-const iso = (day: Date) => day.toISOString().slice(0, 10);
 
 /** Deletes the previous run's org and members. Audit rows stay (append-only, INV-19). */
 async function reset() {
@@ -154,14 +153,13 @@ async function reconcile(orgId: string, charged: Map<string, { times: number; am
   return {
     duplicateCharges: { ledger: ledgerDuplicates, provider: providerDuplicates },
     collected: { providerCents, ledgerCents, reconciled: providerCents === ledgerCents },
-    dunning: { opened: opened.length, recovered, cancelled: exhausted, recoveryRateBps: opened.length ? Math.floor((recovered * 20_000 + opened.length) / (2 * opened.length)) : 0 },
+    dunning: { opened: opened.length, recovered, cancelled: exhausted, recoveryRateBps: ratioBps(recovered, opened.length) },
     statuses: Object.fromEntries(statuses.map((s) => [s.status, s._count])),
   };
 }
 
 /** The summary as printed by `npm run simulate`. */
 export function report(r: Awaited<ReturnType<typeof simulate>>) {
-  const pct = (bps: number) => `${Math.trunc(bps / 100)}.${String(bps % 100).padStart(2, '0')}%`;
   return [
     `BoxLoop simulation: ${r.members} members, ${r.start} → ${r.end}`,
     '',
@@ -174,12 +172,12 @@ export function report(r: Awaited<ReturnType<typeof simulate>>) {
     '',
     `Duplicate charges:  ${r.duplicateCharges.ledger} in the ledger, ${r.duplicateCharges.provider} at the provider`,
     `Collected:          ${formatCents(r.collected.ledgerCents)} recorded, ${formatCents(r.collected.providerCents)} charged — ${r.collected.reconciled ? 'reconciled' : 'MISMATCH'}`,
-    `Dunning recovery:   ${r.dunning.recovered} of ${r.dunning.opened} failed renewals recovered (${pct(r.dunning.recoveryRateBps)}), ${r.dunning.cancelled} cancelled`,
+    `Dunning recovery:   ${r.dunning.recovered} of ${r.dunning.opened} failed renewals recovered (${formatBps(r.dunning.recoveryRateBps)}), ${r.dunning.cancelled} cancelled`,
     '',
     'MRR by month end:',
     ...r.mrr.map((m) => `  ${m.date}  ${formatCents(m.mrrCents).padStart(9)}  (${m.paying} paying)`),
     '',
-    `From the audit stream: MRR and paying ${r.eventsMatchState ? 'match' : 'DO NOT MATCH'} the snapshots above; trial conversion ${pct(trialConversionBps(r.fromEvents))}`,
+    `From the audit stream: MRR and paying ${r.eventsMatchState ? 'match' : 'DO NOT MATCH'} the snapshots above; trial conversion ${formatBps(trialConversionBps(r.fromEvents))}`,
     '              trials won/lost   churn voluntary/involuntary',
     ...r.fromEvents.map((m: MetricsRow) => `  ${m.date}       ${String(m.trialsConverted).padStart(2)} / ${m.trialsLost}                 ${m.voluntaryChurn} / ${m.involuntaryChurn}`),
     '',

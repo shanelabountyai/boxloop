@@ -2,23 +2,21 @@ import { audit } from '@/core/audit';
 import { db } from '@/core/db';
 import { type Charger, mockCharger } from './billing-run';
 import { percentOfCents, prorateCents } from './money';
-import { calendarDay } from './period';
+import { calendarDay, daysBetween, iso } from './period';
 import { StaleTransition, switchPlan } from './transition';
 
 // P0-5: a mid-period plan change, prorated by calendar day. An upgrade charges the net at once; a downgrade's
 // net becomes credit the next invoice uses up (no cash refunds in v1). Plans are immutable (D-001), so a
 // change points the subscription at another plan; same interval only, since month↔year is P2.
 
-const DAY_MS = 86_400_000;
-
 /** Declined upgrade charge: nothing was written and the subscription stays on its plan. */
 export class PlanChangeDeclined extends Error {}
 
 /** The line items for moving from `fromCents` to `toCents` on `day` of the paid period [start, end). Pure. */
 export function prorationLines(fromCents: number, toCents: number, period: { start: Date; end: Date }, day: Date) {
-  if (day < period.start || day >= period.end) throw new Error(`${day.toISOString().slice(0, 10)} is outside the paid period`);
-  const periodDays = (period.end.getTime() - period.start.getTime()) / DAY_MS;
-  const remainingDays = (period.end.getTime() - day.getTime()) / DAY_MS;
+  if (day < period.start || day >= period.end) throw new Error(`${iso(day)} is outside the paid period`);
+  const periodDays = daysBetween(period.start, period.end);
+  const remainingDays = daysBetween(day, period.end);
   const creditCents = -prorateCents(fromCents, remainingDays, periodDays);
   const chargeCents = prorateCents(toCents, remainingDays, periodDays);
   return { remainingDays, periodDays, creditCents, chargeCents, netCents: creditCents + chargeCents };
@@ -54,7 +52,7 @@ export async function changePlan(actor: { orgId: string; userId: string | null }
     // ponytail: the key is per change number and decline, so a retry after a crash replays; a provider that checks amounts would reject a retry to a different plan.
     const result = await charge({ subscriptionId, amountCents: lines.netCents, idempotencyKey: `${subscriptionId}:plan:${seq}:${declines}` });
     if (!result.ok) {
-      await audit(actor, 'plan_change.declined', { targetType: 'subscription', targetId: subscriptionId, data: { toPlanId, reason: result.reason, on: day.toISOString().slice(0, 10) } });
+      await audit(actor, 'plan_change.declined', { targetType: 'subscription', targetId: subscriptionId, data: { toPlanId, reason: result.reason, on: iso(day) } });
       throw new PlanChangeDeclined(result.reason);
     }
     providerRef = result.ref;

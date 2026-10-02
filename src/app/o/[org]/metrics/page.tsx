@@ -1,16 +1,14 @@
 import { requireOrg } from '@/core/authz/guards';
 import { monthlyMetrics, trialConversionBps } from '@/subscriptions/metrics';
-import { formatCents } from '@/subscriptions/money';
-import { calendarDay } from '@/subscriptions/period';
+import { formatBps, formatCents } from '@/subscriptions/money';
+import { calendarDay, iso } from '@/subscriptions/period';
 
 export const metadata = { title: 'Metrics' };
-
-const pct = (bps: number) => `${Math.trunc(bps / 100)}.${String(bps % 100).padStart(2, '0')}%`;
 
 // P1-1: replayed from the subscription audit stream on each request (D-010), as of today (D-003: the page is the entry point).
 export default async function Metrics({ params }: { params: Promise<{ org: string }> }) {
   const ctx = await requireOrg((await params).org, 'org.update');
-  const rows = await monthlyMetrics(ctx.orgId, calendarDay(new Date()).toISOString().slice(0, 10));
+  const rows = await monthlyMetrics(ctx.orgId, iso(calendarDay(new Date())));
   const now = rows.at(-1);
 
   return (
@@ -21,7 +19,7 @@ export default async function Metrics({ params }: { params: Promise<{ org: strin
       ) : (
         <>
           <p>
-            MRR <strong>{formatCents(now.mrrCents)}</strong> · {now.paying} paying · {now.trialing} in trial · trial conversion <strong>{pct(trialConversionBps(rows))}</strong>
+            MRR <strong>{formatCents(now.mrrCents)}</strong> · {now.paying} paying · {now.trialing} in trial · trial conversion <strong>{formatBps(trialConversionBps(rows))}</strong>
           </p>
           <table>
             <thead>

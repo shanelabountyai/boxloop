@@ -1,7 +1,8 @@
 import { audit } from '@/core/audit';
 import { db } from '@/core/db';
 import type { Prisma, SubscriptionStatus as DbStatus } from '@/generated/prisma/client';
-import { next, type SubscriptionEvent, type SubscriptionStatus } from './state';
+import { iso } from './period';
+import { InvalidTransition, next, type SubscriptionEvent, type SubscriptionStatus } from './state';
 
 type Tx = Prisma.TransactionClient;
 
@@ -10,10 +11,13 @@ const sameSet: [DbStatus, SubscriptionStatus] extends [SubscriptionStatus, DbSta
 void sameSet;
 
 /** Date fields as calendar-day strings, for an audit payload. */
-const days = (set: Record<string, Date | null> = {}) => Object.fromEntries(Object.entries(set).map(([k, v]) => [k, v && v.toISOString().slice(0, 10)]));
+const days = (set: Record<string, Date | null> = {}) => Object.fromEntries(Object.entries(set).map(([k, v]) => [k, v && iso(v)]));
 
 /** Another writer moved the subscription between our read and our write. Safe to retry. */
 export class StaleTransition extends Error {}
+
+/** A write lost to another writer (a duplicate attempt row, or the subscription moved): skip it, do not abort. */
+export const lostRace = (e: unknown) => (e as { code?: string }).code === 'P2002' || e instanceof StaleTransition || e instanceof InvalidTransition;
 
 /**
  * The only writer of Subscription.status (P0-2). Validates `event` against the state machine,
@@ -66,7 +70,7 @@ export async function advancePeriod(t: Tx, subscriptionId: string, status: Subsc
       ...(coupon && { couponPeriodsLeft: { decrement: 1 } }),
     },
   });
-  if (count !== 1) throw new StaleTransition(`subscription ${subscriptionId} already moved past ${period.start.toISOString().slice(0, 10)}`);
+  if (count !== 1) throw new StaleTransition(`subscription ${subscriptionId} already moved past ${iso(period.start)}`);
 }
 
 /** Records the member's new mock payment method (P0-6), audited; the third write to the row, kept here for D-004. */

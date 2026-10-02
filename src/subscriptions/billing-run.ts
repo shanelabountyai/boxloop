@@ -2,9 +2,9 @@ import { db } from '@/core/db';
 import { enqueue } from '@/modules/notifications/outbox';
 import type { Prisma } from '@/generated/prisma/client';
 import { formatCents, percentOfCents } from './money';
-import { addDays, calendarDay, periodFrom } from './period';
-import { InvalidTransition, type SubscriptionEvent } from './state';
-import { advancePeriod, StaleTransition, transition } from './transition';
+import { addDays, calendarDay, iso, periodFrom } from './period';
+import type { SubscriptionEvent } from './state';
+import { advancePeriod, lostRace, transition } from './transition';
 
 // P0-4: the daily billing run. Charges every trialing or active subscription whose nextBillingDate is on
 // or before `asOf` (D-003), once per period. past_due belongs to dunning (P0-6); paused and
@@ -32,8 +32,6 @@ export const mockCharger: Charger = async (i) => {
   return result;
 };
 
-const iso = (day: Date) => day.toISOString().slice(0, 10);
-
 /** What a period's invoice charges: the plan price less a live coupon (P1-2), then less any downgrade credit (P0-5). */
 export function invoiceFor(sub: { creditCents: number; couponOffBps: number; couponPeriodsLeft: number; plan: { priceCents: number } }) {
   const discountBps = sub.couponPeriodsLeft > 0 ? sub.couponOffBps : 0;
@@ -51,12 +49,12 @@ async function sweep(day: Date, where: Prisma.SubscriptionWhereInput, event: Sub
   const rows = await db.subscription.findMany({ where, select: { id: true, orgId: true, pausedUntil: true, currentPeriodEnd: true } });
   for (const s of rows) {
     await transition({ orgId: s.orgId, userId: null }, s.id, event, day, undefined, also(s)).catch((e) => {
-      if (!(e instanceof StaleTransition || e instanceof InvalidTransition)) throw e;
+      if (!lostRace(e)) throw e;
     });
   }
 }
 
-export const TRIAL_REMINDER_DAYS = 3;
+const TRIAL_REMINDER_DAYS = 3;
 
 /**
  * P1-3: queues one email, quoting the conversion invoice, to each trialing member whose conversion is 1–3 days after `day`. A window, not an exact
@@ -123,7 +121,7 @@ export async function runBilling(asOf: Date, charge: Charger = mockCharger) {
       });
     } catch (e) {
       // Another run recorded this period, or moved the subscription, after our read.
-      if ((e as { code?: string }).code !== 'P2002' && !(e instanceof StaleTransition || e instanceof InvalidTransition)) throw e;
+      if (!lostRace(e)) throw e;
       summary.skipped++;
       continue;
     }

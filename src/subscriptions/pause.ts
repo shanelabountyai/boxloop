@@ -1,9 +1,7 @@
 import { db } from '@/core/db';
-import { addDays, calendarDay, periodIndex, shift } from './period';
+import { addDays, calendarDay, daysBetween, periodIndex, shift } from './period';
 import { next } from './state';
 import { transition } from './transition';
-
-const DAY_MS = 86_400_000;
 
 // P0-7: pause for 1–3 billing periods (D-007). The pause starts at once and the paid period is moved N periods
 // later, so the unused paid days come after the pause and the next billing date is exactly N billing dates on.
@@ -21,7 +19,7 @@ export async function pause(actor: { orgId: string; userId: string | null }, sub
   const { billingAnchor: anchor, plan } = sub;
   const n = periodIndex(anchor, plan.interval, sub.nextBillingDate) + periods;
   const end = shift(anchor, n, plan.interval);
-  const unusedDays = (sub.currentPeriodEnd.getTime() - day.getTime()) / DAY_MS;
+  const unusedDays = daysBetween(day, sub.currentPeriodEnd);
   const set = {
     currentPeriodStart: shift(anchor, n - 1, plan.interval),
     currentPeriodEnd: end,
