@@ -45,7 +45,7 @@ export default async function Plans({ params }: { params: Promise<{ org: string 
               {!p.archivedAt && (
                 <ActionForm action={bind(archivePlan)}>
                   <input type="hidden" name="id" value={p.id} />
-                  <button type="submit">Archive</button>
+                  <button type="submit" className="secondary">Archive</button>
                 </ActionForm>
               )}
             </>

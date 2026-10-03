@@ -14,7 +14,7 @@ export default function Home() {
         paid, up to when, and what happens next.
       </p>
       <p className="pills">
-        <StatusPill status="trialing" /> <StatusPill status="active" /> <StatusPill status="past_due" /> <StatusPill status="pending_cancellation" />{' '}
+        <StatusPill status="trialing" /> <StatusPill status="active" /> <StatusPill status="past_due" /> <StatusPill status="paused" /> <StatusPill status="pending_cancellation" />{' '}
         <StatusPill status="cancelled" />
       </p>
       <p>

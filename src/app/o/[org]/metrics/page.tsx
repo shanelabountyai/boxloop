@@ -44,7 +44,7 @@ export default async function Metrics({ params }: { params: Promise<{ org: strin
                 <div key={r.date}>
                   <span>{formatCents(r.mrrCents)}</span>
                   <i style={{ height: `${Math.round((r.mrrCents / Math.max(1, ...rows.map((x) => x.mrrCents))) * 150)}px` }} />
-                  <span className="muted">{r.date.slice(5)}</span>
+                  <span className="muted">{new Date(`${r.date}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' })}</span>
                 </div>
               ))}
             </div>

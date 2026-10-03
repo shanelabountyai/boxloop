@@ -108,7 +108,7 @@ button, .button {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; text-align: center;
   background: var(--ac); color: var(--acf); border: 1px solid var(--ac);
 }
-.button { background: var(--sf); color: var(--ink); border-color: var(--ln); }
+.button, button.secondary { background: var(--sf); color: var(--ink); border-color: var(--ln); }
 .button.primary, button.primary { background: var(--ac); color: var(--acf); border-color: var(--ac); }
 button.danger { background: var(--risk-bg); color: var(--risk-fg); border-color: var(--risk-dot); }
 button.link { background: none; border-color: transparent; color: var(--ink); font-weight: 500; padding: 0 12px; }
@@ -169,6 +169,7 @@ header.site form, header.site fieldset { display: contents; }
 .price span { font-size: 14px; font-weight: 400; color: var(--mu); }
 .dates { font-size: 18px; line-height: 1.4; font-weight: 600; text-wrap: pretty; }
 .card-foot { border-top: 1px solid var(--ln); padding-top: 14px; }
+.card-foot:empty { display: none; } /* a cancelled card has no actions */
 .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
 .actions > form > fieldset { align-items: stretch; }
 
@@ -197,7 +198,7 @@ ul.rows { list-style: none; margin: 0; padding: 0 16px; background: var(--sf); b
 ul.rows > li { padding: 14px 0; display: flex; flex-direction: column; gap: 8px; }
 ul.rows > li + li { border-top: 1px solid var(--ln); }
 .row-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
-.row-head > span { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.row-head > span { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; flex: 1 1 0; min-width: 0; } /* the chip wraps under the date; the amount keeps its place */
 .day { min-width: 52px; }
 ul.rows .line { color: var(--mu); }
 
@@ -240,7 +241,8 @@ ol.timeline { list-style: none; margin: 0; padding: 0; }
 .big { font-size: 32px; font-weight: 700; line-height: 1.2; }
 .bars { display: flex; gap: 6px; align-items: flex-end; height: 210px; border-bottom: 1px solid var(--ln); }
 .bars > div { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; height: 100%; font-size: 12px; }
-.bars > div > span:first-child { font-weight: 600; white-space: nowrap; display: none; }
+.bars > div > span { white-space: nowrap; } /* a wrapped label would lift its bar off the shared baseline */
+.bars > div > span:first-child { font-weight: 600; display: none; }
 .bars i { display: block; width: 100%; max-width: 56px; min-height: 2px; background: var(--ch1); border-radius: 4px 4px 0 0; }
 @media (min-width: 640px) { .bars > div > span:first-child { display: block; } }
 
