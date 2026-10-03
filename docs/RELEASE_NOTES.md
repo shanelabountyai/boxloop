@@ -8,7 +8,7 @@ Learning project, local only, mock payments. Status: closed (2026-10-02). All fo
 |---|---|
 | Demo script | `docs/DEMO.md` (every command run once on 2026-10-02) |
 | Cost review | `docs/DECISIONS.md` D-014 |
-| Exec brief | BoxLoop in Brief: https://claude.ai/artifact/TEUMAmMnmSvY6xJm9GmDcw (screens captured 2026-10-02 from the sim org; `simulate` now makes owner@acme an admin of `sim`, so a recapture needs no manual membership) |
+| Exec brief | BoxLoop in Brief: https://claude.ai/artifact/TEUMAmMnmSvY6xJm9GmDcw (version 2, 2026-10-03: styled screenshots of `/o/sim/metrics`, `/o/sim/plans` and one subscriber detail page, captured at 1280px light after `seed:demo` + `simulate`; the "what this is not" list now says the screens are a first design pass, and the decision count reads 23) |
 | LinkedIn posts | Ledger posts 94 (Impact, churn vs failed cards) and 95 (MarTech, discounted downgrade credit), project `boxloop`: https://claude.ai/artifact/Ai5xKScgT2sWtqXRQ1ZA8i |
 
 ## After closure (2026-10-02)
