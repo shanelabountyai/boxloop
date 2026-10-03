@@ -22,4 +22,4 @@ Four review passes; decisions in `docs/DECISIONS.md`.
 
 Build log entry updated: status shipped, with repo, brief and demo links. No technical write-up (`WRITEUP.md`) exists yet.
 
-Not done: the design pass. `docs/DESIGN_BRIEF.md` (2026-10-01) is written, but no design was produced and the member subscription page, subscribers page and global header it specifies are not built.
+Design pass 1 (2026-10-02, a505fa7): `docs/DESIGN_BRIEF.md` implemented as one `globals.css` plus the header, home, member subscription page, operator subscribers list and detail, and 404 (D-022, D-023). Gate: vitest 321/321, e2e 11/11, foundation:drift clean.
