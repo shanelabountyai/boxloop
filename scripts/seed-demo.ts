@@ -13,6 +13,11 @@ const ORGS = [
   { slug: 'acme', name: 'Acme Studio', domain: 'acme.demo.test', projects: ['Website relaunch', 'Q4 planning'] },
   { slug: 'globex', name: 'Globex Labs', domain: 'globex.demo.test', projects: ['Pilot rollout'] },
 ] as const;
+// Acme's plans, so a visitor signed in as member@acme can subscribe. The `sim` org carries its own (D-024).
+const ACME_PLANS = [
+  { name: 'Starter box', priceCents: 2000, interval: 'month', trialDays: 14 },
+  { name: 'Annual box', priceCents: 20000, interval: 'year', trialDays: 0 },
+] as const;
 const ROLES: Role[] = ['owner', 'admin', 'member'];
 
 export async function seedDemo() {
@@ -34,6 +39,11 @@ export async function seedDemo() {
         update: { role },
       });
       printed.push(`${email}  ${role} of ${o.name}${mfa ? '  (TOTP)' : ''}`);
+    }
+    if (o.slug === 'acme') {
+      for (const p of ACME_PLANS) {
+        if (!(await db.plan.findFirst({ where: { orgId: org.id, name: p.name } }))) await db.plan.create({ data: { orgId: org.id, ...p } });
+      }
     }
     for (const name of o.projects) {
       if (!(await db.project.findFirst({ where: { orgId: org.id, name } }))) await db.project.create({ data: { orgId: org.id, name, notes: '' } });
