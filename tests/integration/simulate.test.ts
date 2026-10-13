@@ -1,9 +1,11 @@
 import { beforeEach, expect, it } from 'vitest';
 import { db } from '@/core/db';
 import { monthlyMetrics, trialConversionBps } from '@/subscriptions/metrics';
+import { signup } from '@/subscriptions/signup';
 import { passed, simulate } from '@/subscriptions/simulate';
 import { seedDemo } from '../../scripts/seed-demo';
 import { resetAuthTables } from '../helpers/auth';
+import { addMember, makeOrg } from '../helpers/org';
 
 // D-009: the 180-day simulation meets the PRD's success metrics, and its numbers match a hand tally of the cohorts.
 beforeEach(resetAuthTables);
@@ -32,3 +34,14 @@ it('runs 180 days with no duplicate charge, a reconciled ledger and the hand-tal
   // ...and the demo operator can reach them from /demo.
   expect(await db.membership.findFirst({ where: { orgId: id, user: { email: 'owner@acme.demo.test' } }, select: { role: true } })).toEqual({ role: 'admin' });
 }, 60_000);
+
+it('refuses to run beside a real subscription, and leaves the previous run in place', async () => {
+  const sim = await makeOrg('sim'); // the previous run's org
+  const acme = await makeOrg('acme');
+  const member = await addMember(acme.id, 'member', 'm@acme.test');
+  const plan = await db.plan.create({ data: { orgId: acme.id, name: 'Box', priceCents: 3000, interval: 'month', trialDays: 14 } });
+  await signup({ orgId: acme.id, userId: member.id }, plan.id, new Date('2026-01-31T00:00:00Z'));
+
+  await expect(simulate()).rejects.toThrow('1 subscriptions exist outside the sim');
+  expect(await db.org.findUnique({ where: { id: sim.id } })).not.toBeNull();
+});

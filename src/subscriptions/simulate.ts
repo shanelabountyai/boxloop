@@ -61,11 +61,12 @@ const on = (m: Member, c: Ctx, offset: number) => +c.day === +addDays(m.signupDa
 
 /** Deletes the previous run's org and members. Audit rows stay (append-only, INV-19). */
 async function reset() {
-  await db.org.deleteMany({ where: { slug: SIM_ORG } });
-  await db.user.deleteMany({ where: { email: { endsWith: SIM_EMAIL } } });
-  const others = await db.subscription.count();
+  // Check before deleting: a refusal must leave the previous run's org in place, not half-reset.
+  const others = await db.subscription.count({ where: { org: { slug: { not: SIM_ORG } } } });
   // ponytail: the billing run is global, so the sim needs the subscriptions table to itself; a per-org run would lift this.
   if (others > 0) throw new Error(`${others} subscriptions exist outside the sim; the simulated billing run would charge them too`);
+  await db.org.deleteMany({ where: { slug: SIM_ORG } });
+  await db.user.deleteMany({ where: { email: { endsWith: SIM_EMAIL } } });
 }
 
 export async function simulate({ start = new Date('2026-01-01T00:00:00Z'), days = 180 } = {}) {
