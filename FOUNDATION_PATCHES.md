@@ -2,10 +2,4 @@
 
 Template-owned files that differ from the cloned foundation tag, and why. Delete a row when the clone moves to a foundation release that contains the change.
 
-`src/app/account/security/actions.ts` `cced2c985fe5` — security fixes from the 2026-10-12 review, upstream in saas-foundation (e47af9a, 71b5fd8, 2cc20a8), unreleased after v1.2.0
-`src/core/auth/link.ts` `e0a28ec674ae` — security fixes from the 2026-10-12 review, upstream in saas-foundation (e47af9a, 71b5fd8, 2cc20a8), unreleased after v1.2.0
-`src/core/auth/session.ts` `a967c8cafb7d` — security fixes from the 2026-10-12 review, upstream in saas-foundation (e47af9a, 71b5fd8, 2cc20a8), unreleased after v1.2.0
-`src/core/tenancy/invites.ts` `e4a9c739bc6e` — security fixes from the 2026-10-12 review, upstream in saas-foundation (e47af9a, 71b5fd8, 2cc20a8), unreleased after v1.2.0
-`src/core/tenancy/orgs.ts` `eb5193f0816d` — security fixes from the 2026-10-12 review, upstream in saas-foundation (e47af9a, 71b5fd8, 2cc20a8), unreleased after v1.2.0
-`src/proxy.ts` `3c8e2039e59d` — security fixes from the 2026-10-12 review, upstream in saas-foundation (e47af9a, 71b5fd8, 2cc20a8), unreleased after v1.2.0
-`tests/invariants/inv-06-email-change.test.ts` `39e0b6643d87` — security fixes from the 2026-10-12 review, upstream in saas-foundation (e47af9a, 71b5fd8, 2cc20a8), unreleased after v1.2.0
+`src/proxy.ts` `3c8e2039e59d` — shared-password demo gate (clone-only file, not a foundation fix)
