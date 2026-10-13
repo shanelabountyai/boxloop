@@ -4,7 +4,7 @@ import type { Prisma } from '@/generated/prisma/client';
 import { formatCents, percentOfCents } from './money';
 import { addDays, calendarDay, iso, periodFrom } from './period';
 import type { SubscriptionEvent } from './state';
-import { advancePeriod, lostRace, transition } from './transition';
+import { advancePeriod, hold, lostRace, transition } from './transition';
 
 // P0-4: the daily billing run. Charges every trialing or active subscription whose nextBillingDate is on
 // or before `asOf` (D-003), once per period. past_due belongs to dunning (P0-6); paused and
@@ -89,6 +89,7 @@ export async function runBilling(asOf: Date, charge: Charger = mockCharger) {
   });
   const summary = { attempted: 0, succeeded: 0, failed: 0, skipped: 0 };
   // ponytail: one period per subscription per run, and an unexpected error stops the run; a rerun resumes, idempotently.
+  // The provider is called with a transaction open (D-026): one slower than Prisma's 5s transaction timeout fails the row; raise the timeout for a real provider.
   // A subscription whose charge keeps throwing therefore holds up every id after it: catch per row if that bites.
   for (const sub of due) {
     const key = { subscriptionId: sub.id, periodStart: sub.nextBillingDate, attempt: 1 };
@@ -98,10 +99,13 @@ export async function runBilling(asOf: Date, charge: Charger = mockCharger) {
     }
     const invoice = invoiceFor(sub);
     const { amountCents, creditAppliedCents, discountCents } = invoice;
-    // Charged before recording: if the write below never lands, a rerun sends the same key and the provider replays.
-    const result = await chargeInvoice(charge, { subscriptionId: sub.id, amountCents, idempotencyKey: `${sub.id}:${iso(key.periodStart)}:1` });
+    let ok: boolean;
     try {
-      await db.$transaction(async (t) => {
+      ok = await db.$transaction(async (t) => {
+        // The list above may be stale by now. Charged only while the row is held as read, and recorded in the same
+        // transaction (D-026); if the commit never lands, a rerun sends the same key and the provider replays (D-004).
+        await hold(t, sub.id, { status: sub.status, nextBillingDate: key.periodStart, planId: sub.planId, creditCents: sub.creditCents, couponOffBps: sub.couponOffBps, couponPeriodsLeft: sub.couponPeriodsLeft });
+        const result = await chargeInvoice(charge, { subscriptionId: sub.id, amountCents, idempotencyKey: `${sub.id}:${iso(key.periodStart)}:1` });
         await t.chargeAttempt.create({
           data: {
             ...key,
@@ -115,18 +119,19 @@ export async function runBilling(asOf: Date, charge: Charger = mockCharger) {
           },
         });
         const system = { orgId: sub.orgId, userId: null };
-        if (!result.ok) return void (await transition(system, sub.id, 'payment_failed', day, t)); // opens dunning (P0-6)
+        if (!result.ok) return (await transition(system, sub.id, 'payment_failed', day, t), false); // opens dunning (P0-6)
         await advancePeriod(t, sub.id, sub.status, periodFrom(sub.billingAnchor, sub.plan.interval, key.periodStart), invoice);
         if (sub.status === 'trialing') await transition(system, sub.id, 'convert', day, t);
+        return true;
       });
     } catch (e) {
-      // Another run recorded this period, or moved the subscription, after our read.
+      // Another run recorded this period, or the subscription moved, after our read: nothing was charged.
       if (!lostRace(e)) throw e;
       summary.skipped++;
       continue;
     }
     summary.attempted++;
-    summary[result.ok ? 'succeeded' : 'failed']++;
+    summary[ok ? 'succeeded' : 'failed']++;
   }
   return summary;
 }

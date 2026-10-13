@@ -126,25 +126,28 @@ describe('changePlan', () => {
   it('two changes racing record one between them', async () => {
     const { sub, plan, actor } = await paidSince0901(3000);
     const premium = await plan(6000);
-    // Both calls have read the subscription before either writes: the charger releases them together.
-    let release!: () => void;
-    const bothCharged = new Promise<void>((r) => (release = r));
+    // Both calls have read the subscription before either commits: the winner's charge is slow, and it holds the row (D-026).
     let calls = 0;
-    const barrier: Charger = async (i) => (++calls === 2 && release(), await bothCharged, { ok: true, ref: i.idempotencyKey });
-    const results = await Promise.allSettled([1, 2].map(() => changePlan(actor, sub.id, premium.id, day('2026-09-16'), barrier)));
+    const slow: Charger = async (i) => (calls++, await new Promise((r) => setTimeout(r, 100)), { ok: true, ref: i.idempotencyKey });
+    const results = await Promise.allSettled([1, 2].map(() => changePlan(actor, sub.id, premium.id, day('2026-09-16'), slow)));
+    expect(calls).toBe(1); // the loser is refused before its card is charged
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
     expect(results.find((r) => r.status === 'rejected')).toMatchObject({ reason: expect.any(StaleTransition) });
     expect(await db.planChange.count()).toBe(1);
   });
 
-  it('a cancel landing while the upgrade is charged stops the switch', async () => {
+  it('a cancel sent while the upgrade is charged waits for the switch; the approved charge is recorded (D-026)', async () => {
     const { sub, plan, actor } = await paidSince0901(3000);
     const bigger = await plan(6000);
+    let cancel: Promise<unknown> = Promise.resolve();
     const cancelling: Charger = async (i) => {
-      await transition(actor, sub.id, 'cancel', day('2026-09-16'));
+      cancel = transition(actor, sub.id, 'cancel', day('2026-09-16')).catch((e: unknown) => e);
+      await new Promise((r) => setTimeout(r, 50));
       return { ok: true, ref: `ref_${i.idempotencyKey}` };
     };
-    await expect(changePlan(actor, sub.id, bigger.id, day('2026-09-16'), cancelling)).rejects.toThrow(StaleTransition);
-    expect(await row(sub.id)).toMatchObject({ status: 'pending_cancellation', planId: sub.planId, creditCents: 0 });
+    await changePlan(actor, sub.id, bigger.id, day('2026-09-16'), cancelling);
+    expect(await cancel).toBe('pending_cancellation');
+    expect(await row(sub.id)).toMatchObject({ status: 'pending_cancellation', planId: bigger.id });
+    expect(await db.planChange.findMany({ select: { netCents: true, providerRef: true } })).toEqual([{ netCents: 1500, providerRef: `ref_${sub.id}:plan:1:0` }]);
   });
 });

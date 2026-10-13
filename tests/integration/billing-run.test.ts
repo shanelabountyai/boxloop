@@ -3,7 +3,7 @@ import { db } from '@/core/db';
 import { type Charger, mockCharger, runBilling } from '@/subscriptions/billing-run';
 import { updateCard } from '@/subscriptions/dunning';
 import { signup } from '@/subscriptions/signup';
-import { transition } from '@/subscriptions/transition';
+import { StaleTransition, transition } from '@/subscriptions/transition';
 import { resetAuthTables } from '../helpers/auth';
 import { addMember, makeOrg } from '../helpers/org';
 
@@ -113,9 +113,9 @@ describe('runBilling', () => {
 
   it('a charge whose record is lost replays on the rerun, even after the card has changed (D-004)', async () => {
     const sub = await subscribed(14); // converts 2026-02-14
-    const real = db.$transaction; // vi.spyOn's restore drops the client's own $transaction
-    db.$transaction = (() => Promise.reject(new Error('connection reset'))) as typeof real;
-    await expect(runBilling(day('2026-02-14'))).rejects.toThrow('connection reset').finally(() => (db.$transaction = real));
+    // The provider approves and remembers the key, then the connection drops before the record commits (D-026: the charge is inside that transaction).
+    const dropped: Charger = async (i) => (await mockCharger(i), Promise.reject(new Error('connection reset')));
+    await expect(runBilling(day('2026-02-14'), dropped)).rejects.toThrow('connection reset');
     expect(await db.chargeAttempt.count()).toBe(0);
 
     await updateCard({ orgId: sub.orgId, userId: sub.userId }, sub.id, 'declines', day('2026-02-14'));
@@ -139,20 +139,48 @@ describe('runBilling', () => {
     expect(calls.map((c) => c.idempotencyKey)).toEqual([`${subs[1]!.id}:2026-02-14:1`, `${subs[2]!.id}:2026-02-14:1`]);
   });
 
-  it('a cancel landing while the charge is in flight is skipped, not converted or renewed, and the run goes on', async () => {
-    const trial = await subscribed(14); // converts 2026-02-14
+  it('a cancel sent while the charge is in flight waits for the run; no approved charge is left off the ledger (D-026)', async () => {
+    // The member's cancel is a separate request: started while the provider is working, and not waited for.
+    const approved: string[] = [];
+    let cancel: Promise<unknown> = Promise.resolve();
     const cancelling: Charger = async (i) => {
       const s = await row(i.subscriptionId);
-      await transition({ orgId: s.orgId, userId: s.userId }, s.id, 'cancel', day('2026-02-14'));
-      return mockCharger(i);
+      cancel = transition({ orgId: s.orgId, userId: s.userId }, s.id, 'cancel', day('2026-02-14')).catch((e: unknown) => e);
+      await new Promise((r) => setTimeout(r, 50));
+      const result = await mockCharger(i);
+      if (result.ok) approved.push(result.ref);
+      return result;
     };
-    expect(await runBilling(day('2026-02-14'), cancelling)).toEqual({ attempted: 0, succeeded: 0, failed: 0, skipped: 1 });
-    expect(await row(trial.id)).toMatchObject({ status: 'cancelled', nextBillingDate: day('2026-02-14') });
+    const recorded = async () => (await db.chargeAttempt.findMany({ where: { outcome: 'succeeded' } })).map((a) => a.providerRef);
+
+    const trial = await subscribed(14); // converts 2026-02-14
+    expect(await runBilling(day('2026-02-14'), cancelling)).toEqual({ attempted: 1, succeeded: 1, failed: 0, skipped: 0 });
+    expect(await cancel).toBeInstanceOf(StaleTransition); // it read `trialing`; the member is told to look again
+    expect(await row(trial.id)).toMatchObject({ status: 'active', nextBillingDate: day('2026-03-14') });
+    expect(approved).toHaveLength(1);
+    expect(await recorded()).toEqual(approved);
 
     await resetAuthTables();
-    const paid = await subscribed(0); // paid Jan 31 – Feb 28
-    await runBilling(day('2026-01-31'));
-    expect(await runBilling(day('2026-02-28'), cancelling)).toMatchObject({ skipped: 1 });
-    expect(await row(paid.id)).toMatchObject({ status: 'pending_cancellation', currentPeriodEnd: day('2026-02-28'), nextBillingDate: day('2026-02-28') });
+    approved.length = 0;
+    const paid = await subscribed(0); // paid Jan 31 – Feb 28, by signup
+    expect(await runBilling(day('2026-02-28'), cancelling)).toMatchObject({ succeeded: 1, skipped: 0 });
+    expect(await cancel).toBe('pending_cancellation'); // lands after the renewal, so it ends the period just paid for
+    expect(await row(paid.id)).toMatchObject({ status: 'pending_cancellation', currentPeriodEnd: day('2026-03-31'), nextBillingDate: day('2026-03-31') });
+    expect(approved).toHaveLength(1);
+    expect(await recorded()).toEqual(expect.arrayContaining(approved));
+  });
+
+  it('a subscription cancelled after the run listed it is not charged (D-026)', async () => {
+    const subs = [await subscribed(0), await subscribed(0, '2026-01-31', 'b')].sort((a, b) => a.id.localeCompare(b.id));
+    const [first, second] = [subs[0]!, subs[1]!];
+    // While the run is on the first subscription, the second member cancels: the run's list still says `active`.
+    const { calls, charge } = spy(async (i) => {
+      if (i.subscriptionId === first.id) await transition({ orgId: second.orgId, userId: second.userId }, second.id, 'cancel', day('2026-02-28'));
+      return mockCharger(i);
+    });
+    expect(await runBilling(day('2026-02-28'), charge)).toEqual({ attempted: 1, succeeded: 1, failed: 0, skipped: 1 });
+    expect(calls.map((c) => c.subscriptionId)).toEqual([first.id]);
+    expect(await row(second.id)).toMatchObject({ status: 'pending_cancellation', nextBillingDate: day('2026-02-28') });
+    expect(await db.chargeAttempt.count({ where: { subscriptionId: second.id } })).toBe(1); // its signup charge only
   });
 });

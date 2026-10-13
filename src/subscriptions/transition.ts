@@ -73,6 +73,17 @@ export async function advancePeriod(t: Tx, subscriptionId: string, status: Subsc
   if (count !== 1) throw new StaleTransition(`subscription ${subscriptionId} already moved past ${iso(period.start)}`);
 }
 
+/**
+ * Takes the row lock, and throws `StaleTransition` unless the subscription is still what the caller read
+ * (`read` must name its status, plus whatever the charge is priced from). Call it first in the transaction that
+ * records a charge, before the provider is called (D-026): a cancel, pause, plan change or other run then waits
+ * for the commit instead of landing between an approved charge and its record. Writes the status it matched, so nothing changes.
+ */
+export async function hold(t: Tx, subscriptionId: string, read: Prisma.SubscriptionWhereInput & { status: SubscriptionStatus }) {
+  const { count } = await t.subscription.updateMany({ where: { ...read, id: subscriptionId }, data: { status: read.status } });
+  if (count !== 1) throw new StaleTransition(`subscription ${subscriptionId} changed before it was charged`);
+}
+
 /** Records the member's new mock payment method (P0-6), audited; the third write to the row, kept here for D-004. */
 export async function setCard(actor: { orgId: string; userId: string | null }, subscriptionId: string, card: 'approves' | 'declines', asOf: Date, t: Tx) {
   const { count } = await t.subscription.updateMany({ where: { id: subscriptionId, orgId: actor.orgId }, data: { card } });

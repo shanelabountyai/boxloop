@@ -3,7 +3,7 @@ import type { Prisma } from '@/generated/prisma/client';
 import { enqueue } from '@/modules/notifications/outbox';
 import { type Charger, chargeInvoice, invoiceFor, mockCharger } from './billing-run';
 import { addDays, calendarDay, iso, periodFrom } from './period';
-import { advancePeriod, lostRace, setCard, transition } from './transition';
+import { advancePeriod, hold, lostRace, setCard, transition } from './transition';
 
 // P0-6: dunning. A past_due subscription owes the period starting at nextBillingDate; day 0 is its failed
 // attempt 1 (the billing run). Retries fall on days 1, 3 and 7, each notifies the member through the
@@ -49,27 +49,29 @@ async function retry(actor: Actor, sub: PastDue, seq: NonNullable<ReturnType<typ
   const key = { subscriptionId: sub.id, periodStart: sub.nextBillingDate, attempt };
   const invoice = invoiceFor(sub);
   const { amountCents, creditAppliedCents, discountCents } = invoice;
-  // Charged before recording, as in the billing run (D-004): a lost write replays at the provider.
-  const result = await chargeInvoice(charge, { subscriptionId: sub.id, amountCents, idempotencyKey: `${sub.id}:${iso(key.periodStart)}:${attempt}` });
   const next = RETRY_DAYS.map((d) => addDays(seq.day0, d)).find((d) => d > asOf);
   try {
-    await db.$transaction(async (t) => {
+    return await db.$transaction(async (t) => {
+      // Charged while the row is held, and recorded in the same transaction, as in the billing run (D-026, D-004).
+      await hold(t, sub.id, { status: 'past_due', nextBillingDate: key.periodStart, planId: sub.planId, creditCents: sub.creditCents, couponOffBps: sub.couponOffBps, couponPeriodsLeft: sub.couponPeriodsLeft });
+      const result = await chargeInvoice(charge, { subscriptionId: sub.id, amountCents, idempotencyKey: `${sub.id}:${iso(key.periodStart)}:${attempt}` });
       await t.chargeAttempt.create({
         data: { ...key, amountCents, creditAppliedCents, discountCents, outcome: result.ok ? 'succeeded' : 'failed', providerRef: result.ok ? result.ref : null, failureReason: result.ok ? null : result.reason, attemptedOn: asOf },
       });
       if (!result.ok) {
         const cancels = iso(addDays(seq.day0, CANCEL_DAY));
-        return void (await notify(sub, 'Payment failed again', `We could not charge your card. ${next ? `We will try again on ${iso(next)}. ` : ''}Your subscription cancels on ${cancels} unless payment goes through. Updating your payment method retries it now.`, t));
+        await notify(sub, 'Payment failed again', `We could not charge your card. ${next ? `We will try again on ${iso(next)}. ` : ''}Your subscription cancels on ${cancels} unless payment goes through. Updating your payment method retries it now.`, t);
+        return false;
       }
       await advancePeriod(t, sub.id, 'past_due', periodFrom(sub.billingAnchor, sub.plan.interval, key.periodStart), invoice);
       await transition(actor, sub.id, 'payment_recovered', asOf, t);
       await notify(sub, 'Payment received', 'Your payment went through. Your subscription is active again.', t);
+      return true;
     });
   } catch (e) {
     if (!lostRace(e)) throw e;
     return null;
   }
-  return result.ok;
 }
 
 /**
