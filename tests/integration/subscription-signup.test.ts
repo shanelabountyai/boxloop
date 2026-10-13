@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/core/db';
-import { signup, SignupDeclined } from '@/subscriptions/signup';
+import type { Charger } from '@/subscriptions/billing-run';
+import { AlreadySubscribed, signup, SignupDeclined } from '@/subscriptions/signup';
+import { transition } from '@/subscriptions/transition';
 import { resetAuthTables } from '../helpers/auth';
 import { addMember, makeOrg } from '../helpers/org';
 
@@ -52,6 +54,30 @@ describe('signup', () => {
     const p = await plan(0);
     await expect(signup(actor, p.id, new Date('2026-01-31T00:00:00Z'), async () => ({ ok: false, reason: 'card_declined' }))).rejects.toThrow(SignupDeclined);
     expect([await db.subscription.count(), await db.chargeAttempt.count(), await db.auditEvent.count({ where: { action: 'subscription.created' } })]).toEqual([0, 0, 0]);
+  });
+
+  it('two signups racing leave one live subscription and one charge, each approval on the ledger (D-025)', async () => {
+    const { plan, actor } = await setup();
+    const p = await plan(0);
+    const approved: string[] = [];
+    // Slow enough that, unguarded, both calls are charged before either writes.
+    const charge: Charger = async (i) => (await new Promise((r) => setTimeout(r, 50)), approved.push(`ref_${i.idempotencyKey}`), { ok: true, ref: `ref_${i.idempotencyKey}` });
+    const results = await Promise.allSettled([1, 2].map(() => signup(actor, p.id, new Date('2026-01-31T00:00:00Z'), charge)));
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(results.find((r) => r.status === 'rejected')).toMatchObject({ reason: expect.any(AlreadySubscribed) });
+    expect(await db.subscription.count()).toBe(1);
+    expect((await db.chargeAttempt.findMany()).map((a) => a.providerRef)).toEqual(approved); // nothing taken that is not recorded
+  });
+
+  it('the database allows one live subscription per member and org; a cancelled one does not count', async () => {
+    const { plan, actor } = await setup();
+    const p = await plan(14);
+    const day = new Date('2026-01-31T00:00:00Z');
+    const first = await signup(actor, p.id, day);
+    await expect(signup(actor, p.id, day)).rejects.toThrow(AlreadySubscribed);
+    await transition(actor, first.id, 'cancel', day); // a trial cancels at once
+    expect((await signup(actor, p.id, day)).status).toBe('trialing');
+    expect(await db.subscription.count()).toBe(2);
   });
 
   it('refuses archived plans and plans from another org', async () => {

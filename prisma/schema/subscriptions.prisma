@@ -42,6 +42,8 @@ enum MockCard {
 
 /// A member's subscription to a plan. `status` changes only through transition() (P0-2), which
 /// audits every move. Period dates are calendar days (P0-3, src/subscriptions/period.ts).
+/// One live (not cancelled) subscription per member and org: partial unique index `Subscription_one_live_per_member`,
+/// in migration `20261012000000_one_live_subscription` only, because Prisma cannot declare one (D-025).
 model Subscription {
   id                 String             @id @default(uuid()) @db.Uuid
   orgId              String             @db.Uuid

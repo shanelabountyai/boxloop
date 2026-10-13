@@ -12,7 +12,7 @@ import { undoCancel } from '@/subscriptions/cancel';
 import { updateCard } from '@/subscriptions/dunning';
 import { pause } from '@/subscriptions/pause';
 import { changePlan, PlanChangeDeclined } from '@/subscriptions/plan-change';
-import { signup, SignupDeclined } from '@/subscriptions/signup';
+import { AlreadySubscribed, signup, SignupDeclined } from '@/subscriptions/signup';
 import { InvalidTransition } from '@/subscriptions/state';
 import { lostRace, transition } from '@/subscriptions/transition';
 
@@ -27,6 +27,7 @@ const declines: Charger = async () => ({ ok: false, reason: 'card_declined' });
 function friendly(e: unknown): never {
   if (e instanceof Refused) throw e;
   if (e instanceof SignupDeclined) throw new Refused('Your card was declined, so no subscription was created. Try another card.');
+  if (e instanceof AlreadySubscribed) throw new Refused('You already have a subscription.'); // lost a race past the count below (D-025)
   if (e instanceof PlanChangeDeclined) throw new Refused('Your card was declined, so nothing was changed. Update your payment method and try again.');
   if (e instanceof InvalidTransition && e.from === 'trialing' && e.event === 'pause') throw new Refused('Pausing is not available during a trial. You can cancel instead and nothing will be charged.');
   if (lostRace(e)) throw new Refused('Your subscription changed while you were deciding. Check it and try again.');
