@@ -1,4 +1,5 @@
 import { requireOrg } from '@/core/authz/guards';
+import { now as today } from '@/core/clock';
 import { monthlyMetrics, trialConversionBps } from '@/subscriptions/metrics';
 import { formatBps, formatCents } from '@/subscriptions/money';
 import { calendarDay, iso } from '@/subscriptions/period';
@@ -8,7 +9,7 @@ export const metadata = { title: 'Metrics' };
 // P1-1: replayed from the subscription audit stream on each request (D-010), as of today (D-003: the page is the entry point).
 export default async function Metrics({ params }: { params: Promise<{ org: string }> }) {
   const ctx = await requireOrg((await params).org, 'org.update');
-  const rows = await monthlyMetrics(ctx.orgId, iso(calendarDay(new Date())));
+  const rows = await monthlyMetrics(ctx.orgId, iso(calendarDay(today())));
   const now = rows.at(-1);
 
   return (
